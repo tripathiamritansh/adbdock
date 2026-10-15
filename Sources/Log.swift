@@ -1,8 +1,8 @@
 import Foundation
 
-/// Append-only log at ~/Library/Application Support/AdbDock/app.log,
-/// truncated on each launch. A background app with no window has nowhere else
-/// to explain itself.
+/// Append-only log at ~/Library/Application Support/AdbDock/app.log, truncated on
+/// each launch. A background app with no window has nowhere else to explain
+/// itself. Written 0600 — it carries device serials and addresses.
 enum AppLog {
     static var url: URL { Store.dir.appendingPathComponent("app.log") }
 
@@ -15,13 +15,14 @@ enum AppLog {
     private static let queue = DispatchQueue(label: "app.log")
 
     static func reset() {
-        try? FileManager.default.createDirectory(at: Store.dir, withIntermediateDirectories: true)
+        Store.ensureDirectory()
         try? Data().write(to: url)
+        Store.restrict(url)
     }
 
     static func write(_ message: String) {
         queue.sync {
-            try? FileManager.default.createDirectory(at: Store.dir, withIntermediateDirectories: true)
+            Store.ensureDirectory()
             let line = "\(fmt.string(from: Date())) \(message)\n"
             if let handle = try? FileHandle(forWritingTo: url) {
                 handle.seekToEndOfFile()
@@ -30,6 +31,7 @@ enum AppLog {
             } else {
                 try? Data(line.utf8).write(to: url)
             }
+            Store.restrict(url)
         }
     }
 }

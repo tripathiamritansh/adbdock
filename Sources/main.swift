@@ -5,14 +5,28 @@ import Foundation
 
 enum LoginItem {
     /// Derived from the app's bundle identifier so there is a single source of
-    /// truth: set `BUNDLE_ID` in build.sh (or an untracked local.env) and both
-    /// the app and its LaunchAgent use it.
-    static let label = Bundle.main.bundleIdentifier ?? "com.example.adbdock"
+    /// truth: set `BUNDLE_ID` in build.sh (or an untracked local.env) and both the
+    /// app and its LaunchAgent use it. Sanitised because the bundle id is
+    /// builder-controlled and doubles as a plist filename and a launchctl target.
+    static let label: String = {
+        let allowed = Set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-")
+        let cleaned = String((Bundle.main.bundleIdentifier ?? "").filter { allowed.contains($0) })
+        return cleaned.isEmpty ? "com.example.adbdock" : cleaned
+    }()
+
     static var plistURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/LaunchAgents/\(label).plist")
     }
-    static var isEnabled: Bool { FileManager.default.fileExists(atPath: plistURL.path) }
+
+    /// "Enabled" means the plist exists *and* points at this bundle: a stale plist
+    /// left by an older build path must not read as on.
+    static var isEnabled: Bool {
+        guard let plist = NSDictionary(contentsOf: plistURL),
+              let args = plist["ProgramArguments"] as? [String],
+              let exe = Bundle.main.executablePath else { return false }
+        return args.contains(exe)
+    }
 }
 
 // MARK: - CLI modes
@@ -91,7 +105,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func logStatusItemGeometry(attempt: Int) {
         guard let button = statusItem.button else { return }
         let frame = button.window?.frame ?? .zero
-        let screen = button.window?.screen
+        // A status item's window often reports no screen at all, so find the
+        // display whose menu-bar strip the item's frame lands in.
+        let screen = NSScreen.screens.first { screen in
+            let strip = CGRect(x: screen.frame.minX, y: screen.frame.maxY - 40,
+                               width: screen.frame.width, height: 40)
+            return strip.intersects(frame)
+        } ?? button.window?.screen
+
         if screen == nil && attempt < 5 {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
                 self?.logStatusItemGeometry(attempt: attempt + 1)
@@ -99,15 +120,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         AppLog.write("statusItem visible=\(statusItem.isVisible) frame=\(frame) screen=\(screen?.frame.debugDescription ?? "unknown")")
+        // Log every notched display's gap, so the numbers are there to compare even
+        // when the item's frame cannot be located (multi-display arrangements put a
+        // status item's window frame outside all screen rectangles).
+        for s in NSScreen.screens {
+            if let left = s.auxiliaryTopLeftArea, let right = s.auxiliaryTopRightArea {
+                AppLog.write("notched display \(s.frame): gap x \(left.maxX)…\(right.minX)")
+            }
+        }
         // Notch geometry is in global coordinates, same as the item frame, so the
-        // x axis is directly comparable.
+        // x axis is directly comparable — but only when the frame landed on a screen.
         if let screen = screen,
            let left = screen.auxiliaryTopLeftArea,
            let right = screen.auxiliaryTopRightArea {
-            AppLog.write("screen notch gap x \(left.maxX)…\(right.minX)")
             if frame.minX >= left.maxX, frame.maxX <= right.minX {
                 AppLog.write("WARNING: status item is behind the notch — press ⌃⌥⌘A to open the menu, or free menu bar space")
             }
+        } else if screen == nil {
+            AppLog.write("status item frame could not be matched to a display — compare it with the gaps above by hand")
         }
     }
 
@@ -141,8 +171,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard changed || Date().timeIntervalSince(lastStateWrite) > 60 else { return }
         lastStateJSON = str
         lastStateWrite = Date()
-        try? FileManager.default.createDirectory(at: Store.dir, withIntermediateDirectories: true)
+        Store.ensureDirectory()
         try? data.write(to: store.stateURL, options: .atomic)
+        Store.restrict(store.stateURL)
     }
 
     // MARK: menu
@@ -186,6 +217,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func connectNow(_ sender: NSMenuItem) {
         guard let serial = sender.representedObject as? String else { return }
+        engine.busy = true
+        defer { engine.busy = false }
         guard let svc = Adb.shared.mdnsServices().first(where: { !$0.isPairing && $0.serial == serial }) else {
             AppLog.write("connectNow \(serial): not advertising")
             alert("Connect now", "\(serial) is not advertising on this network.\n\nCheck that Wireless debugging is on for the device and that it is on the same Wi-Fi network as this Mac.")
@@ -246,6 +279,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func addDiscovered(_ sender: NSMenuItem) {
         guard let serial = sender.representedObject as? String else { return }
+        engine.busy = true
+        defer { engine.busy = false }
         let transports = Adb.shared.devices()
         let services = Adb.shared.mdnsServices()
         let t = transports.first { $0.deviceSerial == serial }
@@ -294,16 +329,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         // The phone takes a moment to advertise once its pairing screen opens.
         var service: MdnsService?
+        var candidates: [MdnsService] = []
         for attempt in 0..<10 {
-            let candidates = Adb.shared.mdnsServices().filter { $0.isPairing }
-            if let preferredSerial = preferredSerial,
-               let match = candidates.first(where: { $0.serial == preferredSerial || (knownIP != nil && $0.ip == knownIP) }) {
-                service = match
+            candidates = Adb.shared.mdnsServices().filter { $0.isPairing }
+            if let preferredSerial = preferredSerial {
+                service = candidates.first { $0.serial == preferredSerial || (knownIP != nil && $0.ip == knownIP) }
             } else {
                 service = candidates.first
             }
             if service != nil { break }
             if attempt < 9 { Thread.sleep(forTimeInterval: 0.7) }
+        }
+
+        // Several devices claim to be pairing and none matched what was clicked:
+        // make the user choose — mDNS is unauthenticated and a hostile host can
+        // advertise the same service type.
+        if service == nil, candidates.count > 1 {
+            service = choosePairingCandidate(candidates)
         }
 
         guard var current = service else {
@@ -312,13 +354,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
 
+        engine.busy = true
+        defer { engine.busy = false }
+
         var lastFailure: String?
         for attempt in 1...3 {
             let a = NSAlert()
             a.messageText = "Pair \(current.address)"
-            a.informativeText = attempt == 1
+            // The address comes from an unauthenticated mDNS advertisement, so the
+            // human is the only one who can confirm it is really the phone.
+            a.informativeText = (attempt == 1
                 ? "Enter the 6-digit code shown on the device."
-                : "That didn’t work:\n\n\(lastFailure ?? "adb pair reported failure")\n\nEnter the current code from the device — reopening that screen generates a new one."
+                : "That didn’t work:\n\n\(lastFailure ?? "adb pair reported failure")\n\nEnter the current code from the device — reopening that screen generates a new one.")
+                + "\n\nCheck that \(current.address) matches the IP address and port on the phone’s pairing screen. If it does not, cancel: something on this network is advertising itself as a device in pairing mode."
             a.addButton(withTitle: "Pair")
             a.addButton(withTitle: "Cancel")
             let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
@@ -341,6 +389,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if let refreshed = Adb.shared.mdnsServices().first(where: { $0.isPairing }) { current = refreshed }
         }
         alert("Pairing failed", lastFailure ?? "adb pair did not report success.")
+    }
+
+    /// mDNS is unauthenticated, so when several devices advertise a pairing
+    /// service, let the user pick the address shown on their phone rather than
+    /// silently trusting the first advertiser.
+    private func choosePairingCandidate(_ candidates: [MdnsService]) -> MdnsService? {
+        let a = NSAlert()
+        a.messageText = "Which device are you pairing?"
+        a.informativeText = "Several devices are advertising a pairing service. Pick the address shown on the phone you want to pair."
+        a.addButton(withTitle: "Pair")
+        a.addButton(withTitle: "Cancel")
+        let popup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 320, height: 25))
+        for c in candidates { popup.addItem(withTitle: "\(c.address) — \(c.instance)") }
+        a.accessoryView = popup
+        NSApp.activate(ignoringOtherApps: true)
+        guard a.runModal() == .alertFirstButtonReturn else { return nil }
+        let index = popup.indexOfSelectedItem
+        return index >= 0 && index < candidates.count ? candidates[index] : nil
     }
 
     /// After a successful `adb pair`: wait for the device's *connect*

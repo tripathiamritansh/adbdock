@@ -53,6 +53,17 @@ final class Engine {
     private var bonjourInstances: [String] = []
     private var bonjourAt = Date.distantPast
     private var lastServerRestart = Date.distantPast
+    private var emptyServiceTicks = 0
+    private let busyLock = NSLock()
+    private var _busy = false
+
+    /// True while a user-initiated adb action (pairing, connecting) is in flight.
+    /// The wedge-recovery heuristic must never restart the shared adb server under
+    /// an interactive operation.
+    var busy: Bool {
+        get { busyLock.lock(); defer { busyLock.unlock() }; return _busy }
+        set { busyLock.lock(); _busy = newValue; busyLock.unlock() }
+    }
 
     /// Test hook: pretend adb's mDNS client is blind, to exercise the recovery path.
     private static let faultNoMdns = ProcessInfo.processInfo.environment["ADBDOCK_FAULT_NO_MDNS"] == "1"
@@ -86,15 +97,19 @@ final class Engine {
         // broken part, so restart it. (2026-10-14: a server started while the
         // phone was off the network never re-discovered it; a restart fixed it.)
         if services.isEmpty {
+            emptyServiceTicks += 1
             if Date().timeIntervalSince(bonjourAt) > 15 {
                 bonjourInstances = Bonjour.connectInstances()
                 bonjourAt = Date()
             }
         } else {
+            emptyServiceTicks = 0
             bonjourInstances = []
             bonjourAt = Date()
         }
-        if autoConnect, services.isEmpty, !bonjourInstances.isEmpty,
+        // Three consecutive blind ticks (~15s) before touching the shared server,
+        // and never while the user is pairing or connecting.
+        if autoConnect, !busy, emptyServiceTicks >= 3, !bonjourInstances.isEmpty,
            !transports.contains(where: { $0.state == "device" }),
            Date().timeIntervalSince(lastServerRestart) > 300 {
             let stranded = store.devices.filter { d in
@@ -223,8 +238,8 @@ final class Engine {
         if raw.isEmpty { return "no response" }
         if s.contains("error") || s.contains("unavailable") || s.contains("cannot") { return "unavailable" }
         if s.contains("openscreen") { return "ok (openscreen)" }
-        if s.contains("discovery") { return "ok (bonjour)" }
         if s.contains("version [") { return "ok (bonjour)" }   // "mdns daemon version [2881160004]"
+        if s.contains("discovery") { return "ok (adb)" }       // "adb discovery 0.0.0" — adb's default backend
         return raw.count > 40 ? String(raw.prefix(40)) + "…" : raw
     }
 

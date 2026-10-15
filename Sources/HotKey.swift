@@ -16,14 +16,17 @@ final class HotKey {
         self.action = action
         var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
                                       eventKind: UInt32(kEventHotKeyPressed))
-        InstallEventHandler(GetApplicationEventTarget(), { _, _, userData -> OSStatus in
+        let handlerStatus = InstallEventHandler(GetApplicationEventTarget(), { _, _, userData -> OSStatus in
             guard let userData = userData else { return noErr }
             Unmanaged<HotKey>.fromOpaque(userData).takeUnretainedValue().fire()
             return noErr
         }, 1, &eventType, Unmanaged.passUnretained(self).toOpaque(), &handlerRef)
 
         let hotKeyID = EventHotKeyID(signature: OSType(0x4144_4257), id: 1)   // 'ADBW'
-        RegisterEventHotKey(keyCode, modifiers, hotKeyID, GetApplicationEventTarget(), 0, &hotKeyRef)
+        let registerStatus = RegisterEventHotKey(keyCode, modifiers, hotKeyID, GetApplicationEventTarget(), 0, &hotKeyRef)
+        if handlerStatus != noErr || registerStatus != noErr {
+            AppLog.write("hotkey: registration failed (handler=\(handlerStatus) hotkey=\(registerStatus)) — another app may already own the combination")
+        }
     }
 
     private func fire() {

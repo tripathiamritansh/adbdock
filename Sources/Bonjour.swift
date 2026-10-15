@@ -11,10 +11,6 @@ enum Bonjour {
         browse("_adb-tls-connect._tcp", timeout: timeout)
     }
 
-    static func pairingInstances(timeout: TimeInterval = 2.0) -> [String] {
-        browse("_adb-tls-pairing._tcp", timeout: timeout)
-    }
-
     /// `dns-sd -B` keeps running; it is killed at `timeout` and whatever it printed is parsed.
     private static func browse(_ type: String, timeout: TimeInterval) -> [String] {
         var names: [String] = []
@@ -26,14 +22,6 @@ enum Bonjour {
             if !name.isEmpty && !names.contains(name) { names.append(name) }
         }
         return names
-    }
-
-    /// Resolve an instance to `host:port` as the system resolver sees it.
-    static func resolve(instance: String, type: String = "_adb-tls-connect._tcp", timeout: TimeInterval = 2.0) -> String? {
-        let out = run(["-L", instance, type], timeout: timeout)
-        guard let r = out.range(of: "can be reached at ") else { return nil }
-        let hostPort = out[r.upperBound...].prefix { !$0.isWhitespace }
-        return hostPort.isEmpty ? nil : String(hostPort)
     }
 
     private static func run(_ args: [String], timeout: TimeInterval) -> String {

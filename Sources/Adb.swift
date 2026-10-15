@@ -60,25 +60,39 @@ final class Adb {
     }
 
     /// GUI apps launched by launchd inherit a minimal PATH, so never rely on
-    /// `which adb` alone.
+    /// `which adb` alone. `ADB=/path/to/adb` overrides everything (handy when the
+    /// installed platform-tools has a broken subcommand).
     static func resolve() -> String? {
+        if let override = ProcessInfo.processInfo.environment["ADB"], !override.isEmpty,
+           FileManager.default.isExecutableFile(atPath: override) {
+            return override
+        }
         let candidates = [
             "/opt/homebrew/bin/adb",
             "/usr/local/bin/adb",
             NSHomeDirectory() + "/Library/Android/sdk/platform-tools/adb",
         ]
         for c in candidates where FileManager.default.isExecutableFile(atPath: c) { return c }
+
+        // Last resort: ask a login shell — bounded, stderr drained, and the answer
+        // is validated as an absolute executable path before it is ever used.
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/zsh")
         p.arguments = ["-lc", "command -v adb"]
         let pipe = Pipe()
+        let errPipe = Pipe()
         p.standardOutput = pipe
-        p.standardError = Pipe()
+        p.standardError = errPipe
         guard (try? p.run()) != nil else { return nil }
-        p.waitUntilExit()
+        let killer = DispatchWorkItem { if p.isRunning { p.terminate() } }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 5, execute: killer)
         let out = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return out.isEmpty ? nil : out
+        _ = errPipe.fileHandleForReading.readDataToEndOfFile()
+        p.waitUntilExit()
+        killer.cancel()
+        let path = out.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard path.hasPrefix("/"), FileManager.default.isExecutableFile(atPath: path) else { return nil }
+        return path
     }
 
     static func exec(_ path: String, _ args: [String], timeout: TimeInterval) -> (code: Int32, out: String, err: String) {
@@ -96,12 +110,35 @@ final class Adb {
         p.standardOutput = outPipe
         p.standardError = errPipe
         do { try p.run() } catch { return (-1, "", "\(error)") }
-        let killer = DispatchWorkItem { if p.isRunning { p.terminate() } }
+
+        // Drain both streams concurrently and cap what is kept: a device (or a
+        // flooding mDNS advertiser) must not be able to balloon the app's memory.
+        let limit = 1 << 20   // 1 MiB per stream
+        func drain(_ handle: FileHandle) -> Data {
+            var data = Data()
+            while true {
+                let chunk = handle.availableData
+                if chunk.isEmpty { break }
+                if data.count < limit { data.append(chunk.prefix(limit - data.count)) }
+            }
+            return data
+        }
+        var outData = Data()
+        var errData = Data()
+        let group = DispatchGroup()
+        group.enter()
+        DispatchQueue.global().async { outData = drain(outPipe.fileHandleForReading); group.leave() }
+        group.enter()
+        DispatchQueue.global().async { errData = drain(errPipe.fileHandleForReading); group.leave() }
+
+        let killer = DispatchWorkItem { if p.isRunning { p.terminate() } }          // SIGTERM at the deadline
+        let reaper = DispatchWorkItem { if p.isRunning { kill(p.processIdentifier, SIGKILL) } }
         DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: killer)
-        let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
-        let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+        DispatchQueue.global().asyncAfter(deadline: .now() + timeout + 2, execute: reaper)
+        group.wait()
         p.waitUntilExit()
         killer.cancel()
+        reaper.cancel()
         return (p.terminationStatus, String(decoding: outData, as: UTF8.self), String(decoding: errData, as: UTF8.self))
     }
 

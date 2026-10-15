@@ -15,14 +15,26 @@ struct Device: Codable {
 
 final class Store {
     static var dir: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("AdbDock", isDirectory: true)
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Application Support", isDirectory: true)
+        return base.appendingPathComponent("AdbDock", isDirectory: true)
     }
 
     var devicesURL: URL { Store.dir.appendingPathComponent("devices.json") }
     var stateURL: URL { Store.dir.appendingPathComponent("state.json") }
 
-    private(set) var devices: [Device] = []
+    private var stored: [Device] = []
+    private let lock = NSLock()
+
+    /// Serialised copy: the engine reads this from a background queue while menu
+    /// actions mutate on the main thread. Concurrent array access would be
+    /// undefined behaviour (a click during an in-flight refresh).
+    var devices: [Device] {
+        lock.lock()
+        defer { lock.unlock() }
+        return stored
+    }
 
     private static let encoder: JSONEncoder = {
         let e = JSONEncoder()
@@ -37,43 +49,72 @@ final class Store {
         return d
     }()
 
+    /// 0700 — the state holds device serials, LAN addresses and labels, which are
+    /// nobody else's business on a shared or managed Mac.
+    static func ensureDirectory() {
+        let fm = FileManager.default
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true,
+                                attributes: [.posixPermissions: 0o700])
+        try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
+    }
+
+    static func restrict(_ url: URL) {
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    }
+
     func load() {
+        Store.ensureDirectory()
         guard let data = try? Data(contentsOf: devicesURL),
               let list = try? Store.decoder.decode([Device].self, from: data) else {
-            devices = []
+            lock.lock(); stored = []; lock.unlock()
             return
         }
-        devices = list
+        lock.lock(); stored = list; lock.unlock()
     }
 
     func save() {
-        try? FileManager.default.createDirectory(at: Store.dir, withIntermediateDirectories: true)
-        guard let data = try? Store.encoder.encode(devices) else { return }
+        Store.ensureDirectory()
+        lock.lock()
+        let list = stored
+        lock.unlock()
+        guard let data = try? Store.encoder.encode(list) else { return }
         try? data.write(to: devicesURL, options: .atomic)
+        Store.restrict(devicesURL)
     }
 
     func contains(serial: String) -> Bool { devices.contains { $0.serial == serial } }
 
     func add(serial: String, label: String, model: String?) {
-        guard !contains(serial: serial) else { return }
-        devices.append(Device(serial: serial, label: label, model: model, addedAt: Date(), lastSeen: nil, lastAddress: nil))
-        save()
+        lock.lock()
+        let exists = stored.contains { $0.serial == serial }
+        if !exists {
+            stored.append(Device(serial: serial, label: label, model: model,
+                                 addedAt: Date(), lastSeen: nil, lastAddress: nil))
+        }
+        lock.unlock()
+        if !exists { save() }
     }
 
     func remove(serial: String) {
-        devices.removeAll { $0.serial == serial }
+        lock.lock()
+        stored.removeAll { $0.serial == serial }
+        lock.unlock()
         save()
     }
 
     func rename(serial: String, label: String) {
-        guard let i = devices.firstIndex(where: { $0.serial == serial }) else { return }
-        devices[i].label = label
+        lock.lock()
+        if let i = stored.firstIndex(where: { $0.serial == serial }) { stored[i].label = label }
+        lock.unlock()
         save()
     }
 
     func touch(serial: String, address: String?) {
-        guard let i = devices.firstIndex(where: { $0.serial == serial }) else { return }
-        devices[i].lastSeen = Date()
-        if let a = address { devices[i].lastAddress = a }
+        lock.lock()
+        if let i = stored.firstIndex(where: { $0.serial == serial }) {
+            stored[i].lastSeen = Date()
+            if let a = address { stored[i].lastAddress = a }
+        }
+        lock.unlock()
     }
 }

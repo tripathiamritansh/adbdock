@@ -48,7 +48,7 @@ codesign --force --sign - "$OUT" >/dev/null 2>&1 || echo "warning: ad-hoc codesi
 echo "built $OUT (bundle id ${BUNDLE_ID})"
 
 if [ "${1:-}" = "--run" ]; then
-  pkill -f "${APP_NAME}.app/Contents/MacOS/${APP_NAME}" 2>/dev/null || true
+  pkill -f "$PWD/${OUT}/Contents/MacOS/${APP_NAME}" 2>/dev/null || true
   sleep 1
   open "$OUT"
   echo "launched"

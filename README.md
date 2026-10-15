@@ -18,7 +18,8 @@ approved-device list with live connection state, one-click pairing, and self-rec
 
 The app finds `adb` at `/opt/homebrew/bin/adb`, `/usr/local/bin/adb`, `~/Library/Android/sdk/platform-tools/adb`,
 or a login-shell `PATH` lookup — apps launched by `launchd` get a minimal `PATH`, so it never relies on
-`which adb` alone.
+`which adb` alone. Set `ADB=/path/to/adb` to override the search (useful when the installed
+platform-tools has a broken subcommand).
 
 ## Build and run
 
@@ -56,6 +57,15 @@ Two paths, neither of which needs Android Studio:
 The app waits up to ~7 s for the pairing advertisement to appear, retries the code up to three times
 (reopening the phone's screen generates a new code), then attaches the device and adds it to the
 approved list.
+
+**Check the address in the dialog.** It comes from an unauthenticated mDNS advertisement, so compare
+it with the IP address and port on the phone's screen; if they differ, cancel. When several devices
+advertise a pairing service and none matches the device you clicked, the app asks which one to use
+rather than guessing.
+
+`adb pair` reports *every* failure as `error: protocol fault (couldn't read status message)` — a wrong
+code, an expired pairing screen and an unreachable port are indistinguishable. If it fails twice,
+reopen the pairing screen (new code, new port) and try again.
 
 **Attach a device this Mac has already paired** (for example, paired earlier from Android Studio)
 
@@ -113,7 +123,7 @@ is the same document the app keeps in `state.json`.
 | Path | Purpose |
 |---|---|
 | `~/Library/Application Support/AdbDock/devices.json` | approved list (serial, label, last seen) |
-| `~/Library/Application Support/AdbDock/state.json` | live snapshot, rewritten on change (≤1/min when idle) |
+| `~/Library/Application Support/AdbDock/state.json` | live snapshot, rewritten on change (≤1/min when idle); includes `lastError` when an attach failed |
 | `~/Library/Application Support/AdbDock/app.log` | launch, status-item geometry, auto-connect results, actions, alerts — truncated each launch |
 | `~/Library/LaunchAgents/<bundle-id>.plist` | written by **Start at login** |
 
@@ -165,9 +175,14 @@ ADBDOCK_FAULT_NO_MDNS=1 build/AdbDock.app/Contents/MacOS/AdbDock
 
 - **No network calls of its own, no telemetry, no accounts.** The app shells out to `adb` and to the
   system `dns-sd` and reads their output; the only network traffic is whatever `adb` itself does.
-- **State stays on your machine**, in `~/Library/Application Support/AdbDock/`.
+- **One exception worth naming:** when adb's own mDNS sees nothing, the app browses the local network
+  itself with `dns-sd -B` (mDNS queries on your LAN — local discovery, never an internet connection).
+- **One place it runs code of yours:** if none of the known adb locations exist, it falls back to
+  `zsh -lc 'command -v adb'`, which sources your shell profile. Set `ADB=/path/to/adb` to skip that.
+- **State stays on your machine**, in `~/Library/Application Support/AdbDock/`, created `0700` with
+  files written `0600` (serials and LAN addresses are not world-readable).
 - **Nothing is uploaded anywhere**, and there is no update check or analytics.
-- It is ~900 lines of Swift in `Sources/` — small enough to read before you run it.
+- It is ~1,450 lines of Swift in `Sources/` — small enough to read before you run it.
 
 ## Notes and caveats
 
