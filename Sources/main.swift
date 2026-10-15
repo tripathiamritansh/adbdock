@@ -219,6 +219,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let serial = sender.representedObject as? String else { return }
         engine.busy = true
         defer { engine.busy = false }
+        if store.devices.first(where: { $0.serial == serial })?.paused == true {
+            store.setPaused(serial: serial, false)
+            AppLog.write("connectNow \(serial): resumed (was paused)")
+        }
         guard let svc = Adb.shared.mdnsServices().first(where: { !$0.isPairing && $0.serial == serial }) else {
             AppLog.write("connectNow \(serial): not advertising")
             alert("Connect now", "\(serial) is not advertising on this network.\n\nCheck that Wireless debugging is on for the device and that it is on the same Wi-Fi network as this Mac.")
@@ -230,12 +234,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         refresh()
     }
 
+    /// Drops the transport *and* pauses. A bare disconnect is undone by the next
+    /// auto-connect tick (the device is approved and advertising), which made the
+    /// menu item look broken.
     @objc func disconnectNow(_ sender: NSMenuItem) {
         guard let serial = sender.representedObject as? String else { return }
-        guard let t = Adb.shared.devices().first(where: { $0.deviceSerial == serial }) else { return }
+        engine.busy = true
+        defer { engine.busy = false }
+        guard let t = Adb.shared.devices().first(where: { $0.deviceSerial == serial }) else {
+            store.setPaused(serial: serial, true)
+            AppLog.write("disconnect \(serial): nothing attached; paused so it stays off")
+            refresh()
+            return
+        }
         let message = Adb.shared.disconnect(t.serial)
-        AppLog.write("disconnect \(serial): \(message)")
+        store.setPaused(serial: serial, true)
+        AppLog.write("disconnect \(serial): \(message) (paused so it stays off)")
         if !message.contains("disconnected") { alert("Disconnect", message) }
+        refresh()
+    }
+
+    @objc func togglePause(_ sender: NSMenuItem) {
+        guard let serial = sender.representedObject as? String,
+              let device = store.devices.first(where: { $0.serial == serial }) else { return }
+        store.setPaused(serial: serial, !device.paused)
+        AppLog.write("\(device.paused ? "resume" : "pause") \(serial) (transport left as-is)")
         refresh()
     }
 

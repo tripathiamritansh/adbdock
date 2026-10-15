@@ -11,6 +11,25 @@ struct Device: Codable {
     var addedAt: Date
     var lastSeen: Date?
     var lastAddress: String?
+    /// Paused means "hands off": the app stops managing this device (no
+    /// auto-attach, no reconnect after a drop, and it will not trigger an adb
+    /// server restart) while leaving the adb transport exactly as it is.
+    var paused: Bool = false
+}
+
+extension Device {
+    /// Tolerant decoding: `paused` was added after the first release, and a
+    /// missing key must not wipe someone's approved list.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        serial = try c.decode(String.self, forKey: .serial)
+        label = try c.decode(String.self, forKey: .label)
+        model = try c.decodeIfPresent(String.self, forKey: .model)
+        addedAt = try c.decode(Date.self, forKey: .addedAt)
+        lastSeen = try c.decodeIfPresent(Date.self, forKey: .lastSeen)
+        lastAddress = try c.decodeIfPresent(String.self, forKey: .lastAddress)
+        paused = try c.decodeIfPresent(Bool.self, forKey: .paused) ?? false
+    }
 }
 
 final class Store {
@@ -105,6 +124,13 @@ final class Store {
     func rename(serial: String, label: String) {
         lock.lock()
         if let i = stored.firstIndex(where: { $0.serial == serial }) { stored[i].label = label }
+        lock.unlock()
+        save()
+    }
+
+    func setPaused(serial: String, _ paused: Bool) {
+        lock.lock()
+        if let i = stored.firstIndex(where: { $0.serial == serial }) { stored[i].paused = paused }
         lock.unlock()
         save()
     }

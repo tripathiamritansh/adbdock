@@ -17,6 +17,7 @@ struct Row {
     let state: String?
     let lastSeen: Date?
     let lastError: String?
+    let paused: Bool
 }
 
 struct Discovered {
@@ -113,7 +114,7 @@ final class Engine {
            !transports.contains(where: { $0.state == "device" }),
            Date().timeIntervalSince(lastServerRestart) > 300 {
             let stranded = store.devices.filter { d in
-                bonjourInstances.contains { SerialId.fromMdns($0) == d.serial }
+                !d.paused && bonjourInstances.contains { SerialId.fromMdns($0) == d.serial }
             }
             if !stranded.isEmpty {
                 lastServerRestart = Date()
@@ -129,7 +130,7 @@ final class Engine {
 
         if autoConnect {
             var attempted = false
-            for d in store.devices {
+            for d in store.devices where !d.paused {
                 let t = transports.first { $0.deviceSerial == d.serial }
                 let usable = t?.state == "device"
                 let needsUserAction = t?.state == "unauthorized"
@@ -191,7 +192,8 @@ final class Engine {
                 transport: t?.serial ?? svc?.transportName,
                 state: t?.state,
                 lastSeen: d.lastSeen,
-                lastError: status == .advertising ? lastError[d.serial] : nil
+                lastError: status == .advertising ? lastError[d.serial] : nil,
+                paused: d.paused
             ))
         }
 
@@ -261,6 +263,7 @@ final class Engine {
             if let st = r.state { d["state"] = st }
             if let l = r.lastSeen { d["lastSeen"] = iso.string(from: l) }
             if let e = r.lastError { d["lastError"] = e }
+            if r.paused { d["paused"] = true }
             return d
         }
         out["discovered"] = s.discovered.map { x -> [String: Any] in

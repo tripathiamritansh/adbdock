@@ -72,19 +72,25 @@ final class MenuBuilder {
     private func rowTitle(_ row: Row) -> NSAttributedString {
         let color: NSColor
         let glyph: String
-        switch row.status {
-        case .connected: color = .systemGreen; glyph = "●"
-        case .advertising: color = .systemYellow; glyph = "●"
-        case .offline: color = .systemOrange; glyph = "●"
-        case .absent: color = .tertiaryLabelColor; glyph = "○"
+        if row.paused {
+            color = .secondaryLabelColor
+            glyph = "⏸"
+        } else {
+            switch row.status {
+            case .connected: color = .systemGreen; glyph = "●"
+            case .advertising: color = .systemYellow; glyph = "●"
+            case .offline: color = .systemOrange; glyph = "●"
+            case .absent: color = .tertiaryLabelColor; glyph = "○"
+            }
         }
-        let detail: String
+        var detail: String
         switch row.status {
         case .connected: detail = row.address ?? "connected"
         case .advertising: detail = row.lastError != nil ? "connect failed — pair it?" : "connecting…"
         case .offline: detail = row.state ?? "offline"
         case .absent: detail = "not on network"
         }
+        if row.paused { detail = "paused — " + detail }
         let out = NSMutableAttributedString(string: glyph + "  ", attributes: [.foregroundColor: color])
         out.append(NSAttributedString(string: row.label, attributes: [.foregroundColor: NSColor.labelColor]))
         out.append(NSAttributedString(string: "   " + detail, attributes: [.foregroundColor: NSColor.secondaryLabelColor]))
@@ -120,6 +126,13 @@ final class MenuBuilder {
         disconnect.representedObject = row.serial
         disconnect.isEnabled = row.status == .connected || row.status == .offline
         sub.addItem(disconnect)
+
+        let pause = NSMenuItem(title: row.paused ? "Resume connection" : "Pause connection",
+                               action: #selector(AppDelegate.togglePause(_:)), keyEquivalent: "")
+        pause.target = target
+        pause.representedObject = row.serial
+        pause.toolTip = "Hands off: ADB Dock stops managing this device (no reconnect, no server restart triggered by it). The adb connection itself is left exactly as it is."
+        sub.addItem(pause)
 
         if row.lastError != nil || row.status == .offline {
             let pair = NSMenuItem(title: "Pair this device…", action: #selector(AppDelegate.pairDiscovered(_:)), keyEquivalent: "")

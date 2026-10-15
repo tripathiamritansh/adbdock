@@ -82,6 +82,28 @@ neither the `WIFI:T:ADB` payload marker nor any host-side pairing-server strings
 screen is the only pairing path a CLI-driven app can use; a QR flow would mean reimplementing adb's
 pairing handshake (a security-sensitive protocol) against the phone's scanner.
 
+## Pausing a device
+
+**Pause connection** on a device row is *hands off*, not a disconnect: the adb transport is left
+exactly as it is, but ADB Dock stops managing that device — it will not auto-attach it, will not
+re-attach it after the phone drops off the network, and will not count it as a reason to restart the
+shared adb server. The row shows ⏸ with the connection state preserved, and `state.json` marks it
+`"paused": true`.
+
+Use it when you want a live connection you are driving yourself (a long `adb install`, a logcat
+session, a scripted test) and you don't want anything else touching it.
+
+### Pause vs Disconnect
+
+| | Pause connection | Disconnect |
+|---|---|---|
+| the adb transport | **left attached** — `adb devices` still shows it and your own session keeps working | dropped (`adb disconnect`) |
+| the app's auto-attach | stopped | stopped too — a bare disconnect would otherwise be undone within ~5 s, so Disconnect pauses as well |
+| how it looks | ⏸ paused — connected | ⏸ paused — offline |
+| to undo | **Resume connection** (or **Connect now**) | **Connect now** (re-attaches and hands it back to the app) |
+
+`Connect now` always clears the pause: an explicit connect means "manage this device again".
+
 ## What the rows mean
 
 | Glyph | State | Meaning |
@@ -96,7 +118,7 @@ pairing handshake (a security-sensitive protocol) against the phone's scanner.
 
 | Item | What it does |
 |---|---|
-| device row | submenu: **Connect now**, **Disconnect**, **Pair this device…** (when the connect failed or the transport went stale), **Rename…**, **Remove from list** |
+| device row | submenu: **Connect now**, **Disconnect**, **Pause connection** / **Resume connection**, **Pair this device…** (when the connect failed or the transport went stale), **Rename…**, **Remove from list** |
 | **+ <model>** (discovered) | submenu: **Add (already paired)**, **Pair this device…** |
 | **Pair new device…** (⌘P) | full `adb pair` flow against the advertised pairing service |
 | **Refresh now** (⌘R) | re-read adb state immediately |
