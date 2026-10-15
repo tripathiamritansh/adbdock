@@ -52,12 +52,19 @@ The device is paired, connected, and appended to the approved list. Devices that
 (for example, paired earlier from Android Studio) appear under **Discovered — not in list** with a
 one-click **+ Add**.
 
+**`+ Add` is for devices this Mac has already paired with.** It only connects. If a device is
+advertising but has never been paired here, `+ Add` fails (the row then reads *connect failed — pair
+it?*) and you need **Pair new device…** with the code from the phone — pairing is what puts this
+Mac's key on the device. Repeated connect failures are retried every 5 minutes instead of every 20
+seconds so an unpaired device doesn't spam the adb server.
+
 ## What the rows mean
 
 | Glyph | State | Meaning |
 |---|---|---|
 | 🟢 | connected | transport attached; address shown |
 | 🟡 | connecting… | advertising on the network, this app is attaching it |
+| 🟡 | connect failed — pair it? | advertising, but adb can't attach it — almost always because this Mac has never been paired with that device |
 | 🟠 | offline / unauthorized | transport exists but is not usable (accept the prompt on the phone) |
 | ⚪ | not on network | not advertising — wireless debugging off, phone off, or a different network |
 

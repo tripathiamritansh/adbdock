@@ -81,7 +81,7 @@ final class MenuBuilder {
         let detail: String
         switch row.status {
         case .connected: detail = row.address ?? "connected"
-        case .advertising: detail = "connecting…"
+        case .advertising: detail = row.lastError != nil ? "connect failed — pair it?" : "connecting…"
         case .offline: detail = row.state ?? "offline"
         case .absent: detail = "not on network"
         }

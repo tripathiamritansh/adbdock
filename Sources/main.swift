@@ -72,15 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.menu = menu
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            guard let self = self else { return }
-            let frame = self.statusItem.button?.window?.frame ?? .zero
-            AppLog.write("statusItem visible=\(self.statusItem.isVisible) frame=\(frame)")
-            if let screen = NSScreen.main,
-               let left = screen.auxiliaryTopLeftArea,
-               let right = screen.auxiliaryTopRightArea,
-               frame.minX >= left.maxX, frame.maxX <= right.minX {
-                AppLog.write("WARNING: status item is behind the notch (notch spans x \(left.maxX)…\(right.minX)) — press ⌃⌥⌘A to open the menu, or free menu bar space")
-            }
+            self?.logStatusItemGeometry(attempt: 1)
         }
 
         hotKey = HotKey(keyCode: UInt32(kVK_ANSI_A),
@@ -91,6 +83,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         refresh()
         let timer = Timer(timeInterval: 5, repeats: true) { [weak self] _ in self?.refresh() }
         RunLoop.main.add(timer, forMode: .common)
+    }
+
+    /// Records where the status item landed and warns when macOS parked it behind
+    /// the notch. Retries because the item's window has no screen attached for the
+    /// first moments after launch (its frame is not yet placed either).
+    private func logStatusItemGeometry(attempt: Int) {
+        guard let button = statusItem.button else { return }
+        let frame = button.window?.frame ?? .zero
+        let screen = button.window?.screen
+        if screen == nil && attempt < 5 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+                self?.logStatusItemGeometry(attempt: attempt + 1)
+            }
+            return
+        }
+        AppLog.write("statusItem visible=\(statusItem.isVisible) frame=\(frame) screen=\(screen?.frame.debugDescription ?? "unknown")")
+        // Notch geometry is in global coordinates, same as the item frame, so the
+        // x axis is directly comparable.
+        if let screen = screen,
+           let left = screen.auxiliaryTopLeftArea,
+           let right = screen.auxiliaryTopRightArea {
+            AppLog.write("screen notch gap x \(left.maxX)…\(right.minX)")
+            if frame.minX >= left.maxX, frame.maxX <= right.minX {
+                AppLog.write("WARNING: status item is behind the notch — press ⌃⌥⌘A to open the menu, or free menu bar space")
+            }
+        }
     }
 
     // MARK: refresh loop
@@ -234,9 +252,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let svc = services.first { !$0.isPairing && $0.serial == serial }
         var model = t?.model
         var label = model ?? serial
+        var connectFailure: String?
         if let transport = t?.serial ?? svc?.transportName {
             let r = Adb.shared.connect(transport)
             AppLog.write("add \(serial): connect -> \(r.message)")
+            if !r.ok && t?.state != "device" { connectFailure = r.message }
             if model == nil, let m = Adb.shared.prop(transport, "ro.product.model") {
                 model = m
                 label = m
@@ -244,6 +264,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         store.add(serial: serial, label: label, model: model)
         AppLog.write("add \(serial) label=\(label)")
+        if let failure = connectFailure {
+            alert("Added, but could not connect", "\(label) is advertising on the network but adb could not attach it:\n\n\(failure)\n\nIf this device has never been paired with this Mac, use “Pair new device…” instead — on the phone: Settings → Developer options → Wireless debugging → Pair device with pairing code.\n\nIt stays in the list and connects automatically once it is paired.")
+        }
         refresh()
     }
 

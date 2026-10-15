@@ -16,6 +16,7 @@ struct Row {
     let transport: String?
     let state: String?
     let lastSeen: Date?
+    let lastError: String?
 }
 
 struct Discovered {
@@ -43,6 +44,8 @@ final class Engine {
     private let adb = Adb.shared
     let store: Store
     private var lastAttempt: [String: Date] = [:]
+    private var failures: [String: Int] = [:]
+    private var lastError: [String: String] = [:]
     private var lastSave = Date.distantPast
     private var cachedMdnsCheck = ""
     private var cachedMdnsCheckAt = Date.distantPast
@@ -118,11 +121,21 @@ final class Engine {
                 guard !usable, !needsUserAction,
                       let svc = connectServices().first(where: { $0.serial == d.serial }) else { continue }
                 let last = lastAttempt[d.serial] ?? .distantPast
-                guard Date().timeIntervalSince(last) > 20 else { continue }
+                // A device that is advertising but not paired can never connect;
+                // don't hammer it every 20s forever.
+                let throttle: TimeInterval = (failures[d.serial] ?? 0) >= 3 ? 300 : 20
+                guard Date().timeIntervalSince(last) > throttle else { continue }
                 lastAttempt[d.serial] = Date()
                 attempted = true
                 let r = adb.connect(svc.transportName)
                 snap.connectLog.append("\(d.serial): \(r.message)")
+                if r.ok {
+                    failures[d.serial] = 0
+                    lastError[d.serial] = nil
+                } else {
+                    failures[d.serial] = (failures[d.serial] ?? 0) + 1
+                    lastError[d.serial] = r.message
+                }
             }
             if attempted {
                 transports = adb.devices()
@@ -162,7 +175,8 @@ final class Engine {
                 address: address,
                 transport: t?.serial ?? svc?.transportName,
                 state: t?.state,
-                lastSeen: d.lastSeen
+                lastSeen: d.lastSeen,
+                lastError: status == .advertising ? lastError[d.serial] : nil
             ))
         }
 
@@ -231,6 +245,7 @@ final class Engine {
             if let t = r.transport { d["transport"] = t }
             if let st = r.state { d["state"] = st }
             if let l = r.lastSeen { d["lastSeen"] = iso.string(from: l) }
+            if let e = r.lastError { d["lastError"] = e }
             return d
         }
         out["discovered"] = s.discovered.map { x -> [String: Any] in
