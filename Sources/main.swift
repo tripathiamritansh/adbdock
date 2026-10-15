@@ -7,7 +7,7 @@ enum LoginItem {
     /// Derived from the app's bundle identifier so there is a single source of
     /// truth: set `BUNDLE_ID` in build.sh (or an untracked local.env) and both
     /// the app and its LaunchAgent use it.
-    static let label = Bundle.main.bundleIdentifier ?? "com.example.ADBWireless"
+    static let label = Bundle.main.bundleIdentifier ?? "com.example.adbdock"
     static var plistURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/LaunchAgents/\(label).plist")
@@ -62,9 +62,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         if let button = statusItem.button {
             button.image = NSImage(systemSymbolName: "antenna.radiowaves.left.and.right",
-                                   accessibilityDescription: "ADB Wireless")
+                                   accessibilityDescription: "ADB Dock")
             button.image?.isTemplate = true
-            button.toolTip = "ADB Wireless"
+            button.toolTip = "ADB Dock"
         }
         let menu = NSMenu()
         menu.autoenablesItems = false
@@ -113,7 +113,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func updateStatusButton() {
         let connected = snapshot.rows.filter { $0.status == .connected }.count
-        statusItem.button?.toolTip = "ADB Wireless — \(connected)/\(snapshot.rows.count) approved devices connected"
+        statusItem.button?.toolTip = "ADB Dock — \(connected)/\(snapshot.rows.count) approved devices connected"
     }
 
     private func writeState(_ s: Snapshot) {
@@ -313,10 +313,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         let bundlePath = Bundle.main.bundlePath
         guard bundlePath.hasSuffix(".app") else {
-            alert("Start at login", "Run the app from ADBWireless.app (the build output), not from the raw binary.")
+            alert("Start at login", "Run the app from AdbDock.app (the build output), not from the raw binary.")
             return
         }
-        let exe = xmlEscape(bundlePath + "/Contents/MacOS/ADBWireless")
+        let exe = xmlEscape(bundlePath + "/Contents/MacOS/AdbDock")
         let plist = """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

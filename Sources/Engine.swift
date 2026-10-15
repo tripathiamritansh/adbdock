@@ -52,7 +52,7 @@ final class Engine {
     private var lastServerRestart = Date.distantPast
 
     /// Test hook: pretend adb's mDNS client is blind, to exercise the recovery path.
-    private static let faultNoMdns = ProcessInfo.processInfo.environment["ADBWIRELESS_FAULT_NO_MDNS"] == "1"
+    private static let faultNoMdns = ProcessInfo.processInfo.environment["ADBDOCK_FAULT_NO_MDNS"] == "1"
 
     init(store: Store) { self.store = store }
 

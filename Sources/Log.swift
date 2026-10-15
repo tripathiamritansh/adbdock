@@ -1,6 +1,6 @@
 import Foundation
 
-/// Append-only log at ~/Library/Application Support/ADBWireless/app.log,
+/// Append-only log at ~/Library/Application Support/AdbDock/app.log,
 /// truncated on each launch. A background app with no window has nowhere else
 /// to explain itself.
 enum AppLog {

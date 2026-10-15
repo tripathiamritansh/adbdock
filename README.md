@@ -1,4 +1,4 @@
-# ADB Wireless
+# ADB Dock
 
 A macOS menu bar app that keeps Android **wireless debugging** devices connected over `adb`.
 
@@ -23,11 +23,11 @@ or a login-shell `PATH` lookup — apps launched by `launchd` get a minimal `PAT
 ## Build and run
 
 ```sh
-git clone https://github.com/<you>/adb-wireless.git
-cd adb-wireless
+git clone https://github.com/<you>/adbdock.git
+cd adbdock
 ./build.sh --run          # build and launch
 ./build.sh                # build only
-open build/ADBWireless.app
+open build/AdbDock.app
 ```
 
 First launch shows an empty list; add a device below. Quit from the menu (⌘Q).
@@ -35,11 +35,11 @@ First launch shows an empty list; add a device below. Quit from the menu (⌘Q).
 ### Bundle identifier
 
 `build.sh` bakes a bundle identifier into the app, and that same identifier is the LaunchAgent label
-used by **Start at login**. The default is `com.example.ADBWireless`; override it per machine with an
+used by **Start at login**. The default is `com.example.adbdock`; override it per machine with an
 untracked `local.env`:
 
 ```sh
-echo 'BUNDLE_ID=com.yourname.adbwireless' > local.env
+echo 'BUNDLE_ID=com.yourname.adbdock' > local.env
 ```
 
 ## Adding a device
@@ -73,15 +73,15 @@ one-click **+ Add**.
 | **Start at login** | write/remove the LaunchAgent |
 | **Reveal devices.json** | show the approved list in Finder |
 | footer | adb version and mDNS backend health |
-| **Quit ADB Wireless** (⌘Q) | |
+| **Quit ADB Dock** (⌘Q) | |
 
 **⌃⌥⌘A** opens the menu from anywhere — see *If the icon is not visible* below.
 
 ## Headless use
 
 ```sh
-build/ADBWireless.app/Contents/MacOS/ADBWireless --dump   # snapshot as JSON, exits (no UI, no auto-connect)
-build/ADBWireless.app/Contents/MacOS/ADBWireless --menu   # the status menu as text, exits
+build/AdbDock.app/Contents/MacOS/AdbDock --dump   # snapshot as JSON, exits (no UI, no auto-connect)
+build/AdbDock.app/Contents/MacOS/AdbDock --menu   # the status menu as text, exits
 ```
 
 `--dump` is handy for scripts and for seeing the app's view of the world without clicking. Its output
@@ -91,9 +91,9 @@ is the same document the app keeps in `state.json`.
 
 | Path | Purpose |
 |---|---|
-| `~/Library/Application Support/ADBWireless/devices.json` | approved list (serial, label, last seen) |
-| `~/Library/Application Support/ADBWireless/state.json` | live snapshot, rewritten on change (≤1/min when idle) |
-| `~/Library/Application Support/ADBWireless/app.log` | launch, status-item geometry, auto-connect results, actions, alerts — truncated each launch |
+| `~/Library/Application Support/AdbDock/devices.json` | approved list (serial, label, last seen) |
+| `~/Library/Application Support/AdbDock/state.json` | live snapshot, rewritten on change (≤1/min when idle) |
+| `~/Library/Application Support/AdbDock/app.log` | launch, status-item geometry, auto-connect results, actions, alerts — truncated each launch |
 | `~/Library/LaunchAgents/<bundle-id>.plist` | written by **Start at login** |
 
 ## If the icon is not visible (notched MacBooks)
@@ -132,7 +132,7 @@ The app handles this on its own:
 Exercise the recovery path without waiting for a real wedge:
 
 ```sh
-ADBWIRELESS_FAULT_NO_MDNS=1 build/ADBWireless.app/Contents/MacOS/ADBWireless
+ADBDOCK_FAULT_NO_MDNS=1 build/AdbDock.app/Contents/MacOS/AdbDock
 # app.log then shows: adb mDNS blind (Bonjour sees <serial>) — restarted adb server: …
 ```
 
@@ -140,7 +140,7 @@ ADBWIRELESS_FAULT_NO_MDNS=1 build/ADBWireless.app/Contents/MacOS/ADBWireless
 
 - **No network calls of its own, no telemetry, no accounts.** The app shells out to `adb` and to the
   system `dns-sd` and reads their output; the only network traffic is whatever `adb` itself does.
-- **State stays on your machine**, in `~/Library/Application Support/ADBWireless/`.
+- **State stays on your machine**, in `~/Library/Application Support/AdbDock/`.
 - **Nothing is uploaded anywhere**, and there is no update check or analytics.
 - It is ~900 lines of Swift in `Sources/` — small enough to read before you run it.
 
@@ -157,7 +157,7 @@ ADBWIRELESS_FAULT_NO_MDNS=1 build/ADBWireless.app/Contents/MacOS/ADBWireless
   `adb shell pm grant`) or root can.
 - **Removing a device from the list keeps the adb pairing key** (`~/.android/adb_known_hosts.pb`).
 - **mDNS needs macOS Local Network permission.** If the menu footer shows `mDNS: unavailable`, grant
-  *Local Network* access to ADB Wireless in System Settings → Privacy & Security.
+  *Local Network* access to ADB Dock in System Settings → Privacy & Security.
 - The legacy `adb tcpip 5555` route is a fixed-port alternative that does not need the Wireless
   debugging toggle, but it needs a cable (or a live transport) after each reboot and opens a
   plaintext adb port on the LAN.

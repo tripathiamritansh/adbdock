@@ -19,8 +19,8 @@ final class MenuBuilder {
         menu.autoenablesItems = false
         let s = snapshot
 
-        let header = NSMenuItem(title: "ADB Wireless", action: nil, keyEquivalent: "")
-        header.attributedTitle = NSAttributedString(string: "ADB Wireless", attributes: [
+        let header = NSMenuItem(title: "ADB Dock", action: nil, keyEquivalent: "")
+        header.attributedTitle = NSAttributedString(string: "ADB Dock", attributes: [
             .font: NSFont.boldSystemFont(ofSize: NSFont.systemFontSize),
             .foregroundColor: NSColor.labelColor,
         ])
@@ -52,7 +52,7 @@ final class MenuBuilder {
         menu.addItem(actionItem("Reveal devices.json", #selector(AppDelegate.revealStore), ""))
         menu.addItem(.separator())
         menu.addItem(disabled("adb \(s.adbShort) · mDNS: \(s.mdnsSummary)"))
-        menu.addItem(actionItem("Quit ADB Wireless", #selector(AppDelegate.quit), "q"))
+        menu.addItem(actionItem("Quit ADB Dock", #selector(AppDelegate.quit), "q"))
         return menu
     }
 

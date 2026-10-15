@@ -1,18 +1,18 @@
 #!/bin/bash
-# Builds ADBWireless.app (menu bar app) from Sources/.
+# Builds AdbDock.app (menu bar app) from Sources/.
 #   ./build.sh          build
 #   ./build.sh --run    build and (re)launch
 #
 # The bundle identifier is also the LaunchAgent label used by "Start at login".
 # Override it per machine with an untracked local.env:
-#   BUNDLE_ID=com.yourname.adbwireless
+#   BUNDLE_ID=com.yourname.adbdock
 set -euo pipefail
 cd "$(dirname "$0")"
 
 [ -f local.env ] && . ./local.env
-BUNDLE_ID="${BUNDLE_ID:-com.example.ADBWireless}"
+BUNDLE_ID="${BUNDLE_ID:-com.example.adbdock}"
 
-APP_NAME="ADBWireless"
+APP_NAME="AdbDock"
 OUT="build/${APP_NAME}.app"
 ARCH="$(uname -m)"
 
@@ -32,7 +32,7 @@ cat > "$OUT/Contents/Info.plist" <<PLIST
     <key>CFBundleExecutable</key><string>${APP_NAME}</string>
     <key>CFBundleIdentifier</key><string>${BUNDLE_ID}</string>
     <key>CFBundleName</key><string>${APP_NAME}</string>
-    <key>CFBundleDisplayName</key><string>ADB Wireless</string>
+    <key>CFBundleDisplayName</key><string>ADB Dock</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>1.0</string>
     <key>CFBundleVersion</key><string>1</string>

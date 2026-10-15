@@ -16,7 +16,7 @@ struct Device: Codable {
 final class Store {
     static var dir: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("ADBWireless", isDirectory: true)
+            .appendingPathComponent("AdbDock", isDirectory: true)
     }
 
     var devicesURL: URL { Store.dir.appendingPathComponent("devices.json") }
