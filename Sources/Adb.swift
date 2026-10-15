@@ -7,6 +7,9 @@ struct MdnsService {
     let address: String    // "192.168.1.42:5555"
 
     var isPairing: Bool { type.contains("pairing") }
+    /// Just the address part, for matching a pairing advertisement to a device's
+    /// last known address (the pairing instance name does not always carry the serial).
+    var ip: String { address.split(separator: ":").first.map(String.init) ?? address }
     /// Device serial recovered from the mdns instance name.
     var serial: String { SerialId.fromMdns(instance) }
     /// Transport name exactly as `adb devices` reports it.

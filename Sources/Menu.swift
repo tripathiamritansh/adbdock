@@ -121,6 +121,13 @@ final class MenuBuilder {
         disconnect.isEnabled = row.status == .connected || row.status == .offline
         sub.addItem(disconnect)
 
+        if row.lastError != nil || row.status == .offline {
+            let pair = NSMenuItem(title: "Pair this device…", action: #selector(AppDelegate.pairDiscovered(_:)), keyEquivalent: "")
+            pair.target = target
+            pair.representedObject = row.serial
+            sub.addItem(pair)
+        }
+
         sub.addItem(.separator())
         let rename = NSMenuItem(title: "Rename…", action: #selector(AppDelegate.renameDevice(_:)), keyEquivalent: "")
         rename.target = target
@@ -138,9 +145,24 @@ final class MenuBuilder {
     }
 
     private func discoveredItem(_ d: Discovered) -> NSMenuItem {
-        let item = NSMenuItem(title: "+ Add \"\(d.label)\"", action: #selector(AppDelegate.addDiscovered(_:)), keyEquivalent: "")
-        item.target = target
-        item.representedObject = d.serial
+        let item = NSMenuItem(title: "+ \(d.label)", action: nil, keyEquivalent: "")
+        let sub = NSMenu()
+        sub.autoenablesItems = false
+        sub.addItem(disabled("Serial: \(d.serial)"))
+        if let a = d.address { sub.addItem(disabled("Address: \(a)")) }
+        sub.addItem(.separator())
+
+        let connect = NSMenuItem(title: "Add (already paired)", action: #selector(AppDelegate.addDiscovered(_:)), keyEquivalent: "")
+        connect.target = target
+        connect.representedObject = d.serial
+        sub.addItem(connect)
+
+        let pair = NSMenuItem(title: "Pair this device…", action: #selector(AppDelegate.pairDiscovered(_:)), keyEquivalent: "")
+        pair.target = target
+        pair.representedObject = d.serial
+        sub.addItem(pair)
+
+        item.submenu = sub
         item.isEnabled = true
         item.toolTip = d.connected ? "connected · \(d.serial)" : (d.address.map { "\($0) · \(d.serial)" } ?? d.serial)
         return item

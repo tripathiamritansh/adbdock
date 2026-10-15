@@ -44,19 +44,33 @@ echo 'BUNDLE_ID=com.yourname.adbdock' > local.env
 
 ## Adding a device
 
+Two paths, neither of which needs Android Studio:
+
+**Pair a device this Mac has never seen**
+
 1. On the phone: **Settings → Developer options → Wireless debugging → Pair device with pairing
-   code** (leave that screen open).
-2. Menu bar → **Pair new device…** → type the 6-digit code.
+   code**, and leave that screen open — the device only advertises for pairing while it is showing.
+2. Menu bar → **Pair new device…** — or **Pair this device…** on a row that reads *connect failed —
+   pair it?* — then type the 6-digit code.
 
-The device is paired, connected, and appended to the approved list. Devices that are *already* paired
-(for example, paired earlier from Android Studio) appear under **Discovered — not in list** with a
-one-click **+ Add**.
+The app waits up to ~7 s for the pairing advertisement to appear, retries the code up to three times
+(reopening the phone's screen generates a new code), then attaches the device and adds it to the
+approved list.
 
-**`+ Add` is for devices this Mac has already paired with.** It only connects. If a device is
-advertising but has never been paired here, `+ Add` fails (the row then reads *connect failed — pair
-it?*) and you need **Pair new device…** with the code from the phone — pairing is what puts this
-Mac's key on the device. Repeated connect failures are retried every 5 minutes instead of every 20
-seconds so an unpaired device doesn't spam the adb server.
+**Attach a device this Mac has already paired** (for example, paired earlier from Android Studio)
+
+Menu bar → **Discovered — not in list** → the device → **Add (already paired)**. This only connects:
+pairing is what puts this Mac's key on the device, and it cannot be skipped.
+
+### Why not a QR code?
+
+Android's *Pair device with QR code* screen expects the **host** to run a pairing server and display a
+`WIFI:T:ADB;S:…;P:…;;` payload. That pairing server is Android Studio's own code: the adb command line
+is client-only (`adb pair HOST[:PORT] [PAIRING CODE]`), and the platform-tools 35.0.2 binary contains
+neither the `WIFI:T:ADB` payload marker nor any host-side pairing-server strings — checked with
+`grep -a -o -E 'WIFI:T:ADB|pairing_server|_adb-tls-pairing[a-z._]*' $(command -v adb)`. So the 6-digit
+screen is the only pairing path a CLI-driven app can use; a QR flow would mean reimplementing adb's
+pairing handshake (a security-sensitive protocol) against the phone's scanner.
 
 ## What the rows mean
 
@@ -72,8 +86,8 @@ seconds so an unpaired device doesn't spam the adb server.
 
 | Item | What it does |
 |---|---|
-| device row | submenu: **Connect now**, **Disconnect**, **Rename…**, **Remove from list** |
-| **+ Add "…"** | add a device that is already paired |
+| device row | submenu: **Connect now**, **Disconnect**, **Pair this device…** (when the connect failed or the transport went stale), **Rename…**, **Remove from list** |
+| **+ <model>** (discovered) | submenu: **Add (already paired)**, **Pair this device…** |
 | **Pair new device…** (⌘P) | full `adb pair` flow against the advertised pairing service |
 | **Refresh now** (⌘R) | re-read adb state immediately |
 | **Restart adb server** | `kill-server` + `start-server` — the manual lever when adb's mDNS is wedged |
@@ -110,8 +124,12 @@ is full — parks the extra ones *behind* it, where they are invisible and uncli
 this and says so in `app.log`:
 
 ```
-WARNING: status item is behind the notch (notch spans x 771…956) — press ⌃⌥⌘A to open the menu, or free menu bar space
+statusItem visible=true frame=(1120.0, -33.0, 32.0, 33.0) screen=(0.0, 0.0, 1512.0, 982.0)
+screen notch gap x 700.0…900.0
+WARNING: status item is behind the notch — press ⌃⌥⌘A to open the menu, or free menu bar space
 ```
+
+(The numbers are illustrative; the app reads the real geometry at launch.)
 
 Three ways out: press **⌃⌥⌘A** (always works, even when the icon is hidden), ⌘-drag the item out from
 behind the notch into a free slot, or free up menu bar space (quit a few menu bar apps) so the layout

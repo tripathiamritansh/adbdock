@@ -270,53 +270,117 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         refresh()
     }
 
-    @objc func pairNewDevice() {
-        guard let pairing = Adb.shared.mdnsServices().first(where: { $0.isPairing }) else {
-            AppLog.write("pair: no device in pairing mode")
-            alert("Pair new device", "No device is in pairing mode.\n\nOn the phone: Settings → Developer options → Wireless debugging → Pair device with pairing code. Then choose this menu item again.")
+    @objc func pairNewDevice() { pairDevice(preferredSerial: nil) }
+
+    /// Pair an advertising-but-unpaired device straight from its row.
+    @objc func pairDiscovered(_ sender: NSMenuItem) {
+        guard let serial = sender.representedObject as? String else { return }
+        pairDevice(preferredSerial: serial)
+    }
+
+    /// Pairing wizard for the phone's "Pair device with pairing code" screen —
+    /// the only pairing path the adb command line supports (the QR option next to
+    /// it belongs to Android Studio's own pairing server; see README).
+    ///
+    /// `preferredSerial` lets a device row pair itself: the pairing
+    /// advertisement does not always carry the serial, so the match also falls
+    /// back to the address the device was last seen on.
+    private func pairDevice(preferredSerial: String?) {
+        let knownIP: String? = {
+            guard let serial = preferredSerial,
+                  let address = store.devices.first(where: { $0.serial == serial })?.lastAddress else { return nil }
+            return address.split(separator: ":").first.map(String.init)
+        }()
+
+        // The phone takes a moment to advertise once its pairing screen opens.
+        var service: MdnsService?
+        for attempt in 0..<10 {
+            let candidates = Adb.shared.mdnsServices().filter { $0.isPairing }
+            if let preferredSerial = preferredSerial,
+               let match = candidates.first(where: { $0.serial == preferredSerial || (knownIP != nil && $0.ip == knownIP) }) {
+                service = match
+            } else {
+                service = candidates.first
+            }
+            if service != nil { break }
+            if attempt < 9 { Thread.sleep(forTimeInterval: 0.7) }
+        }
+
+        guard var current = service else {
+            AppLog.write("pair: no pairing service advertised")
+            alert("No device in pairing mode", "On the phone: Settings → Developer options → Wireless debugging → “Pair device with pairing code”, and leave that screen open — it only advertises for pairing while it is showing.\n\nThen pick “Pair new device…” again.")
             return
         }
-        let a = NSAlert()
-        a.messageText = "Pair \(pairing.address)"
-        a.informativeText = "Enter the 6-digit pairing code shown on the device."
-        a.addButton(withTitle: "Pair")
-        a.addButton(withTitle: "Cancel")
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
-        field.placeholderString = "6-digit code"
-        a.accessoryView = field
-        a.window.initialFirstResponder = field
-        NSApp.activate(ignoringOtherApps: true)
-        guard a.runModal() == .alertFirstButtonReturn else { return }
-        let code = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !code.isEmpty else { return }
 
-        let r = Adb.shared.pair(address: pairing.address, code: code)
-        AppLog.write("pair \(pairing.address): \(r.message)")
-        guard r.ok else {
-            alert("Pairing failed", r.message)
-            return
+        var lastFailure: String?
+        for attempt in 1...3 {
+            let a = NSAlert()
+            a.messageText = "Pair \(current.address)"
+            a.informativeText = attempt == 1
+                ? "Enter the 6-digit code shown on the device."
+                : "That didn’t work:\n\n\(lastFailure ?? "adb pair reported failure")\n\nEnter the current code from the device — reopening that screen generates a new one."
+            a.addButton(withTitle: "Pair")
+            a.addButton(withTitle: "Cancel")
+            let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
+            field.placeholderString = "6-digit code"
+            a.accessoryView = field
+            a.window.initialFirstResponder = field
+            NSApp.activate(ignoringOtherApps: true)
+            guard a.runModal() == .alertFirstButtonReturn else { return }
+            let code = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !code.isEmpty else { return }
+
+            let r = Adb.shared.pair(address: current.address, code: code)
+            AppLog.write("pair \(current.address): \(r.message)")
+            if r.ok {
+                finishPairing(pairing: current, knownIP: knownIP)
+                return
+            }
+            lastFailure = r.message
+            // Reopening the phone's screen changes the advertised port.
+            if let refreshed = Adb.shared.mdnsServices().first(where: { $0.isPairing }) { current = refreshed }
         }
+        alert("Pairing failed", lastFailure ?? "adb pair did not report success.")
+    }
 
-        // The connect service appears shortly after pairing.
+    /// After a successful `adb pair`: wait for the device's *connect*
+    /// advertisement, attach it, and record it.
+    private func finishPairing(pairing: MdnsService, knownIP: String?) {
         var connectService: MdnsService?
-        for _ in 0..<20 {
-            connectService = Adb.shared.mdnsServices().first { !$0.isPairing && $0.serial == pairing.serial }
+        for _ in 0..<24 {
+            let services = Adb.shared.mdnsServices().filter { !$0.isPairing }
+            connectService = services.first { $0.serial == pairing.serial }
+                ?? services.first { knownIP != nil && $0.ip == knownIP }
             if connectService != nil { break }
             Thread.sleep(forTimeInterval: 0.5)
         }
 
         var model: String?
         if let transport = connectService?.transportName {
-            let c = Adb.shared.connect(transport)
-            AppLog.write("pair \(pairing.serial): connect -> \(c.message)")
-            if !c.ok { alert("Paired, but connect failed", c.message) }
+            var c = Adb.shared.connect(transport)
+            // A just-paired device often re-advertises a fresh connect port; give
+            // it a few tries before reporting failure.
+            var attempt = 1
+            while !c.ok && attempt <= 3 {
+                Thread.sleep(forTimeInterval: 2)
+                let fresh = Adb.shared.mdnsServices().first {
+                    !$0.isPairing && ($0.serial == pairing.serial || (knownIP != nil && $0.ip == knownIP))
+                }
+                c = Adb.shared.connect(fresh?.transportName ?? transport)
+                attempt += 1
+            }
+            AppLog.write("paired \(pairing.serial): connect -> \(c.message)")
+            if !c.ok {
+                alert("Paired, but could not attach", c.message + "\n\nThe device is in the approved list and will attach on its own once it advertises a reachable port. If it does not, toggle Wireless debugging off and on for that device.")
+            }
             model = Adb.shared.prop(transport, "ro.product.model")
         }
-        let label = model ?? "Device \(pairing.serial)"
-        store.add(serial: pairing.serial, label: label, model: model)
-        AppLog.write("paired \(pairing.serial) label=\(label) connected=\(connectService != nil)")
+        let serial = connectService?.serial ?? pairing.serial
+        let label = model ?? "Device \(serial)"
+        store.add(serial: serial, label: label, model: model)
+        AppLog.write("paired \(serial) label=\(label) attached=\(connectService != nil)")
         alert("Paired", "\(label) added to the approved list." + (connectService == nil
-            ? "\n\nIt is not advertising on this network yet; it will connect automatically once it is."
+            ? "\n\nIt is not advertising for connections yet; it will attach automatically once it is."
             : ""))
         refresh()
     }
