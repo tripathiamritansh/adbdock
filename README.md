@@ -226,6 +226,29 @@ ADBDOCK_FAULT_NO_MDNS=1 build/AdbDock.app/Contents/MacOS/AdbDock
 - macOS only, and only as good as the `adb` on your `PATH`: platform-tools 35.x is what this was
   developed against.
 
+## Development
+
+```sh
+./build.sh --run                                   # build + relaunch
+build/AdbDock.app/Contents/MacOS/AdbDock --dump    # state as JSON, no UI
+build/AdbDock.app/Contents/MacOS/AdbDock --menu    # status menu as text
+ADBDOCK_FAULT_NO_MDNS=1 build/AdbDock.app/Contents/MacOS/AdbDock   # exercise the recovery path
+```
+
+### Commit guard
+
+`hooks/pre-commit` refuses a commit whose identity is not the repository's published identity, or
+whose staged content matches a secret pattern — plus anything listed in the optional, **gitignored**
+`hooks/local-patterns` (device serials, LAN addresses, personal identifiers: they belong there, not in
+the repository). Git reads only *one* hooks directory, so enable it after cloning:
+
+```sh
+git config core.hooksPath "$PWD/hooks"
+```
+
+If your machine already sets a global `core.hooksPath`, this overrides it **for this repository only** —
+worth knowing, because otherwise the guard silently never runs.
+
 ## Layout
 
 | Path | |

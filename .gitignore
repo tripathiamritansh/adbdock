@@ -2,3 +2,4 @@ build/
 .build/
 local.env
 local.env.*
+hooks/local-patterns
