@@ -24,7 +24,7 @@ platform-tools has a broken subcommand).
 ## Build and run
 
 ```sh
-git clone https://github.com/<you>/adbdock.git
+git clone https://github.com/tripathiamritansh/adbdock.git
 cd adbdock
 ./build.sh --run          # build and launch
 ./build.sh                # build only
