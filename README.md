@@ -1,268 +1,370 @@
 # ADB Dock
 
-A macOS menu bar app that keeps Android **wireless debugging** devices connected over `adb`.
+**Android wireless debugging in your Mac's menu bar.**
 
-`adb` already auto-connects devices it has paired with, but there is no visibility into *which* device
-is up, no way to pair a new device without opening Android Studio, and nothing that notices when adb's
-own mDNS client has silently stopped discovering your phone. This is that missing layer: an
-approved-device list with live connection state, one-click pairing, and self-recovery.
+ADB Dock is a macOS menu bar app for seeing which Android devices are connected, pairing new devices
+with a code, and keeping your approved devices attached over `adb`. No Android Studio is required.
+
+`adb` already supports pairing and automatic connections. ADB Dock adds a device list with live
+status, menu actions, and recovery for a specific failure: adb stops discovering devices that macOS
+Bonjour can still see. It runs as a menu bar item, with no Dock icon or main window.
+
+- **See connection state:** connected, advertising, offline, unauthorized, or absent.
+- **Pair from the menu:** enter the phone's 6-digit wireless debugging code.
+- **Reconnect approved devices:** attempt connections when they advertise on the local network.
+- **Pause management per device:** leave an existing transport alone while you use it yourself.
+- **Recover discovery:** compare adb's view with Bonjour and conditionally restart a stalled server.
+- **Keep it local:** no accounts, telemetry, analytics, or update checks. MIT licensed.
+
+[Get started](#quick-start) · [Pair a device](#adding-a-device) ·
+[Troubleshooting](#troubleshooting) · [Development](docs/DEVELOPMENT.md)
+
+## Screenshots
+
+![ADB Dock's macOS menu with no approved or discovered devices](docs/images/adbdock-empty-state.png)
+
+Empty state, before adding a device. Edited and upscaled screenshot; other menu-bar icons removed.
+
+![ADB Dock's macOS menu showing a connected device with example details](docs/images/adbdock-connected.png)
+
+Connected-device view. Edited and upscaled screenshot; other menu-bar icons removed.
+**Device details replaced with examples.** “Android Phone” and `192.0.2.10:5555` are fictional details.
 
 ## Requirements
 
-| | |
+| Requirement | Details |
 |---|---|
-| macOS | 13 or later (menu bar app — no Dock icon, no window) |
-| adb | Android platform-tools: `brew install android-platform-tools`, or the copy in `~/Library/Android/sdk/platform-tools` |
-| Build tools | Xcode command line tools (`swiftc`) |
-| Device | Android 11 or later with **Developer options → Wireless debugging** enabled |
+| Mac | macOS 13 or later; Apple silicon or Intel. The build targets the Mac's current architecture. |
+| Build tools | Xcode Command Line Tools, including `swiftc`, and Git. Needed to build/package from source, not to run a prebuilt app. |
+| adb | Android SDK Platform-Tools. The project was originally developed against platform-tools 35.x. |
+| Android device | Android 11 or later with **Developer options → Wireless debugging** enabled. |
+| Network | Mac and phone on the same local network, with mDNS discovery and device connections allowed. Guest Wi-Fi/client isolation can block them. |
 
-The app finds `adb` at `/opt/homebrew/bin/adb`, `/usr/local/bin/adb`, `~/Library/Android/sdk/platform-tools/adb`,
-or a login-shell `PATH` lookup — apps launched by `launchd` get a minimal `PATH`, so it never relies on
-`which adb` alone. Set `ADB=/path/to/adb` to override the search (useful when the installed
-platform-tools has a broken subcommand).
+The full application, including its command-line modes, requires macOS and Apple's frameworks.
+Linux and Windows are not supported app platforms. No USB cable or Android Studio is needed for the
+wireless pairing flow.
 
-## Build and run
+## Install from an unsigned DMG
+
+When a release includes DMG assets, find them on the project's
+[Releases page](https://github.com/tripathiamritansh/adbdock/releases). Choose `arm64` for Apple silicon
+or `x86_64` for Intel. If no DMG is listed, use the source-build instructions below. adb is a separate
+prerequisite and is **not included** in the image; install Android SDK Platform-Tools through your
+Android SDK or `brew install --cask android-platform-tools`.
+
+1. Download the DMG and its matching `.dmg.sha256` file from the same trusted release. In their download
+   directory, run `shasum -a 256 -c <filename>.dmg.sha256`, replacing the filename with the actual one.
+2. Open the DMG, quit any existing ADB Dock copy, and drag `AdbDock.app` to the **Applications** shortcut.
+   Use `~/Applications` instead if you do not have permission to install in `/Applications`.
+3. Eject the DMG and open the installed app. Enable **Start at login** only from this final location.
+
+These images are **unsigned and not notarized**. The app inside is ad-hoc signed for executable
+integrity, without a verified Developer ID. Gatekeeper can block a downloaded copy. If you trust its
+source, attempt to open it, then use **System Settings → Privacy & Security → Open Anyway** for that
+specific app when offered, following the confirmation prompt. Available controls can vary with macOS
+version and device policy. Do not disable Gatekeeper globally or remove quarantine recursively.
+Treat malware or damaged-app warnings as reasons to stop and investigate, rather than routine approval.
+A checksum detects file changes; it does not authenticate the developer or replace notarization.
+
+A paid Apple Developer membership is not required for this unsigned distribution workflow. The DMG
+is a container, not a notarization or security approval. See the [included installation notes](docs/INSTALL.txt)
+and [packaging guide](docs/RELEASING.md) for details.
+
+## Quick start
+
+Build from source on your Mac. Install Apple's Command Line Tools if needed, then wait for their
+installer to finish:
 
 ```sh
+xcode-select --install
+```
+
+Install adb with [Homebrew](https://brew.sh/) if you do not already have it through the Android SDK:
+
+```sh
+brew install --cask android-platform-tools
+```
+
+Verify the tools, clone, and build:
+
+```sh
+xcrun swiftc --version
+adb version
 git clone https://github.com/tripathiamritansh/adbdock.git
 cd adbdock
-./build.sh --run          # build and launch
-./build.sh                # build only
+./build.sh
 open build/AdbDock.app
 ```
 
-First launch shows an empty list; add a device below. Quit from the menu (⌘Q).
+The output is `build/AdbDock.app`. Look for the antenna icon in the menu bar. Your approved list starts
+empty; devices adb already sees can appear under **Discovered — not in list**. Follow
+[Adding a device](#adding-a-device) next. Quit with **Quit ADB Dock** in the menu.
 
-### Bundle identifier
+The build script uses `swiftc` directly in Swift 5 language mode. There are no third-party Swift
+libraries or package-install steps; adb is a separate required tool. The script attempts ad-hoc signing
+for local use. This is not a Developer ID signing or notarization workflow.
 
-`build.sh` bakes a bundle identifier into the app, and that same identifier is the LaunchAgent label
-used by **Start at login**. The default is `com.example.adbdock`; override it per machine with an
-untracked `local.env`:
+### Optional: keep a copy in Applications
+
+Quit any running copy first, then run these commands from the checkout:
 
 ```sh
-echo 'BUNDLE_ID=com.yourname.adbdock' > local.env
+mkdir -p "$HOME/Applications"
+ditto build/AdbDock.app "$HOME/Applications/AdbDock.app"
+open "$HOME/Applications/AdbDock.app"
 ```
+
+Choose a stable app location before enabling **Start at login**. Avoid running a build copy and an
+installed copy at the same time: they use the same saved device list and shared adb server.
+
+### How adb is found
+
+The app checks an executable `ADB` environment override first, then these locations:
+
+1. `/opt/homebrew/bin/adb`
+2. `/usr/local/bin/adb`
+3. `~/Library/Android/sdk/platform-tools/adb`
+4. A login-shell lookup with `zsh -lc 'command -v adb'`
+
+Finder and login launches may have a minimal `PATH`. To diagnose a custom installation, quit the app
+and launch its executable directly from Terminal with an absolute path:
+
+```sh
+ADB=/absolute/path/to/adb build/AdbDock.app/Contents/MacOS/AdbDock
+```
+
+That override applies to this launch. It is not saved by **Start at login**. For normal login use,
+install adb in one of the supported locations or make it discoverable by the login-shell lookup.
 
 ## Adding a device
 
-Two paths, neither of which needs Android Studio:
+### Pair a device this Mac has never paired with
 
-**Pair a device this Mac has never seen**
+1. Connect the Mac and phone to the same local network. Enable **Developer options → Wireless
+   debugging** on the phone; Android's exact labels may vary by manufacturer.
+2. Open **Pair device with pairing code** on the phone and leave that screen open.
+3. Open ADB Dock → **Pair new device…**.
+4. **Compare the IP address and port in the Mac dialog with the phone's pairing screen.** Cancel if
+   they differ. Enter the current 6-digit code and choose **Pair**.
+5. After successful pairing, the app adds the device to its approved list and attempts to attach it.
+   If the connection service is not available yet, it will retry when the device advertises.
 
-1. On the phone: **Settings → Developer options → Wireless debugging → Pair device with pairing
-   code**, and leave that screen open — the device only advertises for pairing while it is showing.
-2. Menu bar → **Pair new device…** — or **Pair this device…** on a row that reads *connect failed —
-   pair it?* — then type the 6-digit code.
+The dialog offers up to three pairing attempts. Reopening the phone's pairing screen changes the code
+and may change the port. Pair one phone at a time when possible: **Pair new device…** initially uses
+the first pairing advertisement it finds. A device row's **Pair this device…** tries to match that
+device; if it cannot and several candidates remain, it offers an address chooser. Always check the
+address, including after a retry, because mDNS advertisements are unauthenticated.
 
-The app waits up to ~7 s for the pairing advertisement to appear, retries the code up to three times
-(reopening the phone's screen generates a new code), then attaches the device and adds it to the
-approved list.
+Pairing and connecting are separate operations. A **Paired** message does not guarantee an immediately
+usable transport; check the device's row or `adb devices -l` afterward.
 
-**Check the address in the dialog.** It comes from an unauthenticated mDNS advertisement, so compare
-it with the IP address and port on the phone's screen; if they differ, cancel. When several devices
-advertise a pairing service and none matches the device you clicked, the app asks which one to use
-rather than guessing.
+### Add a device already paired with this Mac
 
-`adb pair` reports *every* failure as `error: protocol fault (couldn't read status message)` — a wrong
-code, an expired pairing screen and an unreachable port are indistinguishable. If it fails twice,
-reopen the pairing screen (new code, new port) and try again.
+Choose **Discovered — not in list → device → Add (already paired)**. Devices paired earlier using adb
+or Android Studio can use this path. Adding a row does not authorize a new Mac on the phone. If the
+connection fails because pairing is missing, use **Pair new device…** or **Pair this device…**.
 
-**Attach a device this Mac has already paired** (for example, paired earlier from Android Studio)
+### QR pairing
 
-Menu bar → **Discovered — not in list** → the device → **Add (already paired)**. This only connects:
-pairing is what puts this Mac's key on the device, and it cannot be skipped.
+ADB Dock implements the pairing-code flow through `adb pair`. It does not implement Android Studio's
+QR-code pairing flow; use **Pair device with pairing code** on the phone.
 
-### Why not a QR code?
+## Device controls and status
 
-Android's *Pair device with QR code* screen expects the **host** to run a pairing server and display a
-`WIFI:T:ADB;S:…;P:…;;` payload. That pairing server is Android Studio's own code: the adb command line
-is client-only (`adb pair HOST[:PORT] [PAIRING CODE]`), and the platform-tools 35.0.2 binary contains
-neither the `WIFI:T:ADB` payload marker nor any host-side pairing-server strings — checked with
-`grep -a -o -E 'WIFI:T:ADB|pairing_server|_adb-tls-pairing[a-z._]*' $(command -v adb)`. So the 6-digit
-screen is the only pairing path a CLI-driven app can use; a QR flow would mean reimplementing adb's
-pairing handshake (a security-sensitive protocol) against the phone's scanner.
+The app normally refreshes about every five seconds; adb operations can make a refresh take longer.
+Automatic connection attempts are throttled per device: at least 20 seconds apart initially, then
+five minutes apart after three consecutive failures. It leaves an unauthorized transport for you to
+resolve on the phone.
 
-## Pausing a device
+| Row appearance | Meaning |
+|---|---|
+| Green dot + address | adb reports a usable transport. The address may also be `USB` or `wireless`. |
+| Yellow dot + **connecting…** | A connection service is advertising, but no transport is attached yet. |
+| Yellow dot + **connect failed — pair it?** | An automatic attach failed. Missing pairing is one possible cause; check network access too. |
+| Orange dot + **offline** / **unauthorized** | A transport exists but is unusable. Check the phone for an authorization prompt. |
+| Hollow dot + **not on network** | Neither a matching transport nor a connection advertisement is visible. |
+| **⏸ paused — …** | ADB Dock has stopped managing this device; its underlying connection state is still shown. |
 
-**Pause connection** on a device row is *hands off*, not a disconnect: the adb transport is left
-exactly as it is, but ADB Dock stops managing that device — it will not auto-attach it, will not
-re-attach it after the phone drops off the network, and will not count it as a reason to restart the
-shared adb server. The row shows ⏸ with the connection state preserved, and `state.json` marks it
-`"paused": true`.
+### Pause, disconnect, and resume
 
-Use it when you want a live connection you are driving yourself (a long `adb install`, a logcat
-session, a scripted test) and you don't want anything else touching it.
+| Action | Effect |
+|---|---|
+| **Pause connection** | Stops ADB Dock's reconnect attempts and excludes this device as a reason for automatic server recovery. Leaves the adb transport as it is. |
+| **Disconnect** | Requests `adb disconnect` and pauses ADB Dock's management of the device. |
+| **Resume connection** | Re-enables ADB Dock's management; connection attempts follow the normal refresh and retry rules. |
+| **Connect now** | Clears pause and attempts a connection if the device is advertising. Available when the row is not connected. |
+| **Remove from list** | Removes ADB Dock's saved entry. Keeps adb's pairing credentials. |
 
-### Pause vs Disconnect
+**The approved list and pause controls govern ADB Dock, not adb's own auto-connect behavior.** adb may
+still attach a previously paired device independently. Removing, pausing, or disconnecting a row does
+not revoke the phone's trust in this Mac. Revoke pairing through the phone's wireless debugging
+settings when needed. Manual **Restart adb server** affects the shared server and all its transports,
+including paused devices; avoid it during an install, logcat session, or other adb work.
 
-| | Pause connection | Disconnect |
-|---|---|---|
-| the adb transport | **left attached** — `adb devices` still shows it and your own session keeps working | dropped (`adb disconnect`) |
-| the app's auto-attach | stopped | stopped too — a bare disconnect would otherwise be undone within ~5 s, so Disconnect pauses as well |
-| how it looks | ⏸ paused — connected | ⏸ paused — offline |
-| to undo | **Resume connection** (or **Connect now**) | **Connect now** (re-attaches and hands it back to the app) |
-
-`Connect now` always clears the pause: an explicit connect means "manage this device again".
-
-## What the rows mean
-
-| Glyph | State | Meaning |
-|---|---|---|
-| 🟢 | connected | transport attached; address shown |
-| 🟡 | connecting… | advertising on the network, this app is attaching it |
-| 🟡 | connect failed — pair it? | advertising, but adb can't attach it — almost always because this Mac has never been paired with that device |
-| 🟠 | offline / unauthorized | transport exists but is not usable (accept the prompt on the phone) |
-| ⚪ | not on network | not advertising — wireless debugging off, phone off, or a different network |
-
-## Menu
+### Other menu actions
 
 | Item | What it does |
 |---|---|
-| device row | submenu: **Connect now**, **Disconnect**, **Pause connection** / **Resume connection**, **Pair this device…** (when the connect failed or the transport went stale), **Rename…**, **Remove from list** |
-| **+ <model>** (discovered) | submenu: **Add (already paired)**, **Pair this device…** |
-| **Pair new device…** (⌘P) | full `adb pair` flow against the advertised pairing service |
-| **Refresh now** (⌘R) | re-read adb state immediately |
-| **Restart adb server** | `kill-server` + `start-server` — the manual lever when adb's mDNS is wedged |
-| **Start at login** | write/remove the LaunchAgent |
-| **Reveal devices.json** | show the approved list in Finder |
-| footer | adb version and mDNS backend health |
-| **Quit ADB Dock** (⌘Q) | |
+| **Rename…** | Changes the saved label for an approved device. |
+| **Pair new device…** (⌘P) | Opens the pairing-code flow. |
+| **Refresh now** (⌘R) | Requests a refresh, unless one is already running. |
+| **Restart adb server** | Runs `adb kill-server` followed by `adb start-server`. |
+| **Start at login** | Creates or removes a per-user LaunchAgent pointing to this app's current location. |
+| **Reveal devices.json** | Reveals the approved-list file in Finder. |
+| Footer | Shows the adb protocol version and a summary of `adb mdns check`. |
+| **Quit ADB Dock** (⌘Q) | Quits the app; does not stop adb or disconnect its devices. |
 
-**⌃⌥⌘A** opens the menu from anywhere — see *If the icon is not visible* below.
+**⌃⌥⌘A** (Control–Option–Command–A) opens the menu globally when the shortcut registers successfully.
 
-## Headless use
+## Start at login and bundle identifier
+
+Launch the app from its chosen location, then enable **Start at login**. The LaunchAgent stores an
+absolute executable path. If you move the app, disable login startup from the old location first,
+move it, then re-enable it from the new location.
+
+The default bundle identifier and LaunchAgent label are `com.example.adbdock`. To choose your own,
+add this line to a gitignored `local.env` in the checkout **before building**:
 
 ```sh
-build/AdbDock.app/Contents/MacOS/AdbDock --dump   # snapshot as JSON, exits (no UI, no auto-connect)
-build/AdbDock.app/Contents/MacOS/AdbDock --menu   # the status menu as text, exits
+BUNDLE_ID=com.yourname.adbdock
 ```
 
-`--dump` is handy for scripts and for seeing the app's view of the world without clicking. Its output
-is the same document the app keeps in `state.json`.
+`local.env` is sourced as shell code by `build.sh`; use only configuration you trust. It is build-time
+configuration, not a runtime environment file. If you change the identifier after enabling login
+startup, disable the old LaunchAgent first to avoid leaving a second startup entry.
 
-## Files
+## Command-line snapshots
+
+From the checkout on macOS:
+
+```sh
+build/AdbDock.app/Contents/MacOS/AdbDock --dump
+build/AdbDock.app/Contents/MacOS/AdbDock --menu
+```
+
+`--dump` prints a fresh JSON snapshot. `--menu` prints the menu as text. Both exit without starting the
+menu bar refresh loop, auto-connecting devices, or running automatic server recovery. They still
+initialize AppKit and invoke adb, which can start its shared daemon and perform its own auto-connects;
+these are not Linux/headless-server entry points. Snapshot collection can update saved last-seen
+metadata for approved devices.
+
+The JSON has the same structure as `state.json`: `updatedAt`, `adbPath`, `adbVersion`, `mdns`,
+`mdnsSummary`, `connectLog`, `devices`, and `discovered`. Per-device details include identity, status,
+and optional transport/address/error fields; `paused` is included when true. A fresh `--dump` can differ
+from the running app's saved snapshot, including its transient error history.
+
+## Troubleshooting
+
+### adb not found or a build fails
+
+Run `adb version` and `xcrun swiftc --version` in Terminal. Install the missing prerequisite from
+[Quick start](#quick-start), and check the app's adb search locations. A working Terminal `PATH` alone
+does not establish that a Finder-launched app can find the same binary. If `swiftc` reports missing
+Apple frameworks or a macOS standard library, make sure you are building on macOS with Apple's tools.
+
+### No device in pairing mode, or pairing fails
+
+Keep the phone's **Pair device with pairing code** screen open. Check both devices' network, guest
+Wi-Fi/client isolation, and any firewall rules blocking local discovery or device connections. On
+macOS versions that ask for Local Network access, allow it for the relevant app/tool; review denied
+access in **System Settings → Privacy & Security → Local Network**, where available.
+
+The phone's pairing port and connection port are different. Generic errors such as
+`protocol fault (couldn't read status message)` can have several causes, including an expired code or
+an unreachable pairing service. Reopen the pairing screen, start the pairing flow again, and compare
+the newly advertised address before entering the new code. After a reboot or network change, check
+whether Wireless debugging is still enabled; ADB Dock does not enable it remotely.
+
+### Connected before, but no longer discovered
+
+Inspect the local adb view:
+
+```sh
+adb devices -l
+adb mdns check
+adb mdns services
+```
+
+On macOS, compare it with Bonjour's view (press Control-C to stop browsing):
+
+```sh
+dns-sd -B _adb-tls-connect._tcp
+```
+
+ADB Dock passes `ADB_MDNS_OPENSCREEN=0` to adb subprocesses to request the Bonjour backend on versions
+that support it. This does not reconfigure an already-running server; backend behavior depends on the
+installed platform-tools version. An `ok` footer is a summary of command output, not proof that a
+particular phone is reachable.
+
+When adb reports no services, the app also browses with macOS `dns-sd`. After at least three empty
+refreshes, it may restart adb if Bonjour sees an approved, unpaused device, no transport is in the
+`device` state, no interactive operation is marked busy, and the five-minute recovery cooldown has
+elapsed. This is a recovery heuristic, not a guarantee for every discovery failure. Manual **Restart
+adb server** is available after you have finished other adb work.
+
+### Menu icon hidden or shortcut does not work
+
+On a crowded or notched menu bar, try **⌃⌥⌘A**, free up menu bar space, or move visible status items with
+Command-drag. The app logs status-item geometry and warns when it can identify an item behind the
+notch. If the shortcut conflicts with another app, `app.log` records a hotkey registration failure.
+
+### Start at login stops working
+
+Check that the app still exists at the location used when startup was enabled. Disable and re-enable
+**Start at login** from the intended copy, and inspect `app.log` for LaunchAgent errors. Keep only one
+copy configured to start. Changing the bundle identifier also changes the LaunchAgent label.
+
+## Local files and privacy
 
 | Path | Purpose |
 |---|---|
-| `~/Library/Application Support/AdbDock/devices.json` | approved list (serial, label, last seen) |
-| `~/Library/Application Support/AdbDock/state.json` | live snapshot, rewritten on change (≤1/min when idle); includes `lastError` when an attach failed |
-| `~/Library/Application Support/AdbDock/app.log` | launch, status-item geometry, auto-connect results, actions, alerts — truncated each launch |
-| `~/Library/LaunchAgents/<bundle-id>.plist` | written by **Start at login** |
+| `~/Library/Application Support/AdbDock/devices.json` | Approved devices, labels, pause state, and saved last-seen metadata. |
+| `~/Library/Application Support/AdbDock/state.json` | Live JSON snapshot written by the menu bar app after refreshes; includes transient errors when present. |
+| `~/Library/Application Support/AdbDock/app.log` | Launch, geometry, connection results, actions, and alerts. Truncated at app launch. |
+| `~/Library/LaunchAgents/<bundle-id>.plist` | Login startup entry, created only when enabled. |
 
-## If the icon is not visible (notched MacBooks)
+The snapshot's timestamp changes on each refresh, so `state.json` can be rewritten about every five
+seconds even when device state is unchanged. Device identity is derived from the serial, rather than
+relying on a stable mDNS suffix or connection port.
 
-On a MacBook with a camera notch, macOS lays status items out around the notch and — when the menu bar
-is full — parks the extra ones *behind* it, where they are invisible and unclickable. The app detects
-this and says so in `app.log`:
+ADB Dock uses local subprocesses (`adb` and macOS `dns-sd`) for device traffic and LAN discovery. It
+has no account system, telemetry, analytics, upload service, or update check. adb separately maintains
+its keys and paired hosts under `~/.android/`; ADB Dock does not remove those credentials.
 
-```
-statusItem visible=true frame=(1120.0, -33.0, 32.0, 33.0) screen=(0.0, 0.0, 1512.0, 982.0)
-screen notch gap x 700.0…900.0
-WARNING: status item is behind the notch — press ⌃⌥⌘A to open the menu, or free menu bar space
-```
+The app requests `0700` permissions for its support directory and `0600` for its device, state, and
+log files. They contain device identifiers, labels, addresses, and diagnostic details: redact them
+before sharing. The fallback adb lookup starts a login shell, which can execute your shell profile;
+an explicit executable `ADB` override avoids that lookup.
 
-(The numbers are illustrative; the app reads the real geometry at launch.)
+## Update or uninstall
 
-Three ways out: press **⌃⌥⌘A** (always works, even when the icon is hidden), ⌘-drag the item out from
-behind the notch into a free slot, or free up menu bar space (quit a few menu bar apps) so the layout
-stops spilling.
+To update a source build, quit the app, update your checkout, run `./build.sh`, and launch the new
+bundle. If you use an Applications copy, replace that copy with the newly built bundle before
+relaunching. Keep the same app path and bundle identifier to retain the login configuration. Device
+data lives outside the bundle and survives a rebuild.
 
-## When adb's own mDNS wedges
-
-Observed behaviour: an adb server started while the phone was **off** the network can stop discovering
-it entirely, even after the phone returns with wireless debugging on — `adb mdns services` stays empty
-while the system resolver sees the device instantly (`dns-sd -B _adb-tls-connect._tcp`).
-`adb kill-server && adb start-server` fixes it immediately. The wedged server reported adb's
-`Openscreen` mDNS backend; working servers reported Bonjour.
-
-The app handles this on its own:
-
-- It **forces the Bonjour backend** (`ADB_MDNS_OPENSCREEN=0`) for every adb server it starts, so the
-  server uses mDNSResponder rather than adb's own client.
-- When adb's mDNS sees nothing, it asks **Bonjour** (`dns-sd`) — the system view of the network. If an
-  approved device is advertising there while *nothing at all* is attached, it concludes its adb server
-  is the broken part, restarts it (at most once every 5 minutes), logs the reason, and re-attaches.
-- **Restart adb server** in the menu does the same thing by hand for the cases the heuristic
-  deliberately skips (it will not restart the server while some other device is attached and working,
-  so it never kills an in-flight `adb install`).
-
-Exercise the recovery path without waiting for a real wedge:
-
-```sh
-ADBDOCK_FAULT_NO_MDNS=1 build/AdbDock.app/Contents/MacOS/AdbDock
-# app.log then shows: adb mDNS blind (Bonjour sees <serial>) — restarted adb server: …
-```
-
-## Privacy
-
-- **No network calls of its own, no telemetry, no accounts.** The app shells out to `adb` and to the
-  system `dns-sd` and reads their output; the only network traffic is whatever `adb` itself does.
-- **One exception worth naming:** when adb's own mDNS sees nothing, the app browses the local network
-  itself with `dns-sd -B` (mDNS queries on your LAN — local discovery, never an internet connection).
-- **One place it runs code of yours:** if none of the known adb locations exist, it falls back to
-  `zsh -lc 'command -v adb'`, which sources your shell profile. Set `ADB=/path/to/adb` to skip that.
-- **State stays on your machine**, in `~/Library/Application Support/AdbDock/`, created `0700` with
-  files written `0600` (serials and LAN addresses are not world-readable).
-- **Nothing is uploaded anywhere**, and there is no update check or analytics.
-- It is ~1,450 lines of Swift in `Sources/` — small enough to read before you run it.
-
-## Notes and caveats
-
-- **The approved list is bookkeeping, not a firewall.** adb auto-connects any device it has paired
-  with; this app decides what it shows and force-attaches — it cannot stop adb from attaching a paired
-  device.
-- **Device identity is the serial**, not the mDNS name (the random suffix is regenerated each time
-  adbd restarts) and not the address (the port changes every time wireless debugging is toggled). The
-  app never hardcodes `ip:port`.
-- **After a phone reboot** Android turns Wireless debugging off; re-enable it on the phone. Nothing
-  host-side can flip that setting — an on-device app with `WRITE_SECURE_SETTINGS` (granted once via
-  `adb shell pm grant`) or root can.
-- **Removing a device from the list keeps the adb pairing key** (`~/.android/adb_known_hosts.pb`).
-- **mDNS needs macOS Local Network permission.** If the menu footer shows `mDNS: unavailable`, grant
-  *Local Network* access to ADB Dock in System Settings → Privacy & Security.
-- The legacy `adb tcpip 5555` route is a fixed-port alternative that does not need the Wireless
-  debugging toggle, but it needs a cable (or a live transport) after each reboot and opens a
-  plaintext adb port on the LAN.
-- macOS only, and only as good as the `adb` on your `PATH`: platform-tools 35.x is what this was
-  developed against.
+To uninstall, disable **Start at login**, quit the app, and remove the app bundle. Optionally remove
+`~/Library/Application Support/AdbDock/` to delete ADB Dock's local data. This does not uninstall adb,
+stop its server, or revoke pairing on the phone.
 
 ## Development
 
-```sh
-./build.sh --run                                   # build + relaunch
-build/AdbDock.app/Contents/MacOS/AdbDock --dump    # state as JSON, no UI
-build/AdbDock.app/Contents/MacOS/AdbDock --menu    # status menu as text
-ADBDOCK_FAULT_NO_MDNS=1 build/AdbDock.app/Contents/MacOS/AdbDock   # exercise the recovery path
-```
+See [the development guide](docs/DEVELOPMENT.md) for source layout, build details, manual validation,
+and the discovery-recovery test hook, and the [packaging guide](docs/RELEASING.md) for unsigned DMGs.
 
 ### Commit guard
 
-`hooks/pre-commit` refuses a commit whose identity is not the repository's published identity, or
-whose staged content matches a secret pattern — plus anything listed in the optional, **gitignored**
-`hooks/local-patterns` (device serials, LAN addresses, personal identifiers: they belong there, not in
-the repository). Git reads only *one* hooks directory, so enable it after cloning:
+From the checkout, enable the repository's existing guard with:
 
 ```sh
-git config core.hooksPath "$PWD/hooks"
+git config --local core.hooksPath "$PWD/hooks"
 ```
 
-If your machine already sets a global `core.hooksPath`, this overrides it **for this repository only** —
-worth knowing, because otherwise the guard silently never runs.
-
-## Layout
-
-| Path | |
-|---|---|
-| `Sources/Adb.swift` | process runner, adb discovery, parsers (`mdns services`, `devices -l`), serial extraction, server restart |
-| `Sources/Bonjour.swift` | system-resolver discovery (`dns-sd`) used to detect a wedged adb mDNS client |
-| `Sources/Engine.swift` | snapshot computation, auto-connect loop, JSON serialisation |
-| `Sources/Store.swift` | approved list persistence |
-| `Sources/Menu.swift` | status menu construction (+ `--menu` text rendering) |
-| `Sources/HotKey.swift` | global hotkey (⌃⌥⌘A) |
-| `Sources/Log.swift` | `app.log` writer |
-| `Sources/main.swift` | CLI modes, app delegate, actions, LaunchAgent toggle |
-| `build.sh` | `swiftc` → `.app` bundle, `Info.plist`, ad-hoc signing |
+This overrides a global hooks path for this repository. The guard checks the maintainer's published
+commit identity and staged secret patterns, plus optional gitignored `hooks/local-patterns`. External
+contributors should read [the guard's scope](docs/DEVELOPMENT.md#commit-guard) before enabling it;
+do not impersonate the maintainer to satisfy the identity check.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+[MIT](LICENSE).

@@ -1,0 +1,39 @@
+ADB Dock — unsigned DMG installation
+
+Requires macOS 13+, Android 11+ wireless debugging, and a Mac/phone on the same
+local network. Choose arm64 for Apple silicon or x86_64 for an Intel Mac.
+adb is NOT included. Install Android SDK Platform-Tools separately, for example:
+
+    brew install --cask android-platform-tools
+
+Using a prebuilt app does not require Xcode or a paid Apple Developer membership.
+
+1. Verify the DMG's SHA-256 checksum against the companion .dmg.sha256 file from
+   the same trusted source, then open the DMG. A checksum detects changes; it
+   does not verify the developer's identity or replace Apple's notarization.
+2. Quit any running ADB Dock copy. Drag AdbDock.app to the Applications shortcut
+   in this image. If you cannot write there, copy it to ~/Applications instead.
+3. Eject the disk image, then open the installed copy from Applications.
+   Do not enable Start at login while running the copy on the mounted image.
+
+This DMG is unsigned and NOT notarized. The contained app is ad-hoc signed for
+local executable integrity, without a verified Developer ID. A downloaded copy
+may be blocked by Gatekeeper as an unverified developer or unnotarized app.
+
+If you trust the project's source and expected download, first attempt to open
+the installed app. If macOS blocks it, go to System Settings > Privacy & Security
+and use Open Anyway for this specific app, when offered. Follow the confirmation
+prompt. The available wording and override can vary by macOS version or managed
+device policy. Do not disable Gatekeeper globally or remove quarantine recursively.
+If macOS reports malware or a damaged app, stop and investigate/re-download from
+the trusted source instead of treating that warning as routine approval.
+
+After launch, look for the antenna icon in the menu bar; no Dock icon is shown.
+On the phone, enable Developer options > Wireless debugging > Pair device with
+pairing code. Leave that screen open. In ADB Dock, choose Pair new device...,
+compare the dialog's address/port with the phone, then enter its current code.
+Allow Local Network access when macOS requests it for the app/tool.
+Enable Start at login only after choosing the final installed app location.
+
+Full setup, troubleshooting, source, and MIT license:
+https://github.com/tripathiamritansh/adbdock
