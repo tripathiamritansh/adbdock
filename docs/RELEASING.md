@@ -5,6 +5,9 @@ The DMG is unsigned and not notarized. Its app is ad-hoc signed for executable
 integrity, without a verified Developer ID. adb is not bundled. See the
 [installation notes](INSTALL.txt) for prerequisites and app-specific Gatekeeper guidance.
 
+The repository also distributes this image through a [Homebrew tap](HOMEBREW.md).
+After publishing a new DMG, follow the [cask update checklist](HOMEBREW.md#maintain-the-cask).
+
 ## Build on a Mac
 
 With macOS 13+ and Apple's Command Line Tools, run from the repository root:

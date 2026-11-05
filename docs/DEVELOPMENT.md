@@ -4,6 +4,10 @@ Start with the [README's prerequisites and setup](../README.md#quick-start). The
 macOS 13+ and Apple's Command Line Tools; installing a Linux Swift compiler does not provide AppKit,
 Carbon, or the macOS SDK.
 
+For your first contribution, read [CONTRIBUTING.md](../CONTRIBUTING.md). The
+[architecture guide](ARCHITECTURE.md) explains the refresh and recovery flow; the
+[user guide](USAGE.md) covers configuration and diagnostics.
+
 ## Build and run
 
 From the repository root on a Mac:
@@ -25,8 +29,9 @@ For an unsigned DMG, use [`scripts/package-dmg.sh`](../scripts/package-dmg.sh) a
 verifies the image before saving release outputs. The first published image is arm64 only; no Intel image has been validated.
 
 The script recreates the output bundle. Do not keep hand-edited files there. Per-machine `BUNDLE_ID`
-belongs in the gitignored `local.env`; the script sources that file as shell code. It is not read by
-the running app. There is no package manifest, dependency lockfile, or package-install step.
+belongs in the gitignored `local.env`; see [bundle configuration](USAGE.md#start-at-login-and-bundle-identifier).
+The script sources that file as shell code. It is not read by the running app. There is no package
+manifest, dependency lockfile, or package-install step.
 
 ## Source layout
 
@@ -42,7 +47,7 @@ the running app. There is no package manifest, dependency lockfile, or package-i
 | [`Sources/main.swift`](../Sources/main.swift) | CLI modes, app delegate, menu actions, pairing dialogs, state writes, and LaunchAgent management. |
 | [`build.sh`](../build.sh) | Compilation, app bundle metadata, signing attempt, and optional relaunch. |
 
-## Validation before a release
+## Validation
 
 There is no automated app test suite in this checkout. Run the following on a Mac and record the macOS,
 architecture, Swift, platform-tools, and Android versions used. A successful portable typecheck does
@@ -55,7 +60,7 @@ From the repository root:
 ```sh
 xcrun swiftc --version
 adb version
-bash -n build.sh hooks/pre-commit
+bash -n build.sh scripts/package-dmg.sh hooks/pre-commit
 ./build.sh
 codesign --verify --deep --strict build/AdbDock.app
 build/AdbDock.app/Contents/MacOS/AdbDock --dump
@@ -63,10 +68,11 @@ build/AdbDock.app/Contents/MacOS/AdbDock --menu
 open build/AdbDock.app
 ```
 
-Confirm `--dump` emits valid JSON with the documented top-level fields and `--menu` emits the expected
-menu. These modes initialize AppKit, invoke adb, and can update approved devices' last-seen metadata;
-run them in a macOS user session. They do not run the app's automatic connection loop. The app bundle's
-`--dump` and `--menu` modes are not usable Linux substitutes for the GUI.
+Confirm `--dump` emits valid JSON with the [documented fields](USAGE.md#command-line-snapshots)
+and `--menu` emits the expected menu. These modes initialize AppKit, invoke adb, and can update
+approved devices' last-seen metadata; run them in a macOS user session. They do not run the app's
+automatic connection loop. The app bundle's `--dump` and `--menu` modes are not usable Linux
+substitutes for the GUI.
 
 ### App and device behavior
 
@@ -127,8 +133,13 @@ maintainer email in both Git configuration and any author/committer email overri
 added content for selected credential patterns. It is not a general secret scanner or a guarantee
 against publishing sensitive data.
 
-The README shows how the maintainer enables it locally. Contributors using another identity should
-coordinate a suitable contribution workflow rather than copying the maintainer's identity. Enabling
-it overrides any global `core.hooksPath` for this checkout. The hook also accepts optional extra regex
-patterns in gitignored `hooks/local-patterns`; keep real device identifiers and addresses out of tracked
-files, screenshots, launch media, and issue reports.
+For the maintainer, enable it from the repository root:
+
+```sh
+git config --local core.hooksPath "$PWD/hooks"
+```
+
+Enabling it overrides any global `core.hooksPath` for this checkout. Contributors should use their
+own Git identity and leave this optional maintainer guard unconfigured. The hook also accepts extra
+regex patterns in gitignored `hooks/local-patterns`; keep real device identifiers and addresses out
+of tracked files, screenshots, and issue reports.
