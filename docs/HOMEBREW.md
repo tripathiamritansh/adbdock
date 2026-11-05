@@ -1,8 +1,9 @@
 # Homebrew distribution
 
 ADB Dock is distributed as a cask in this repository's `Casks/` directory. It installs the published
-DMG and declares Android Platform-Tools as a dependency. Version 1.0 supports Apple silicon and
-macOS 13+; an Intel cask needs a separately built and validated Intel release asset.
+DMG and declares Android Platform-Tools as a dependency. See [the current cask](../Casks/adbdock.rb)
+for its version and supported architectures. macOS 13+ is required. The original v1.0 cask supports
+Apple silicon; automated updates add Intel only after both native builds and release verification pass.
 
 ## Install
 
@@ -28,8 +29,8 @@ signing status or guarantee Gatekeeper approval. Follow the [installation notes]
 the app-specific macOS approval flow; no quarantine removal or global security changes are needed
 in the cask.
 
-The cask still installs v1.0. Security fixes on `main` need a new Mac build and release before they
-reach Brew installations; see [release security status](../SECURITY.md#release-status).
+Source fixes reach Brew installations after a release is published and its cask-update PR is merged.
+See the [release policy](../SECURITY.md#release-status).
 
 ## Update or remove
 
@@ -60,8 +61,12 @@ disable their own login startup. Homebrew manages dependency cleanup separately.
 
 ## Maintain the cask
 
-[`Casks/adbdock.rb`](../Casks/adbdock.rb) points to the immutable v1.0 release URL and records the
-DMG's SHA-256. The cask does not build from source or disable macOS security checks.
+[`Casks/adbdock.rb`](../Casks/adbdock.rb) points to immutable release URLs and records each DMG's
+SHA-256. The cask does not build from source or disable macOS security checks.
+
+The [release workflow](RELEASING.md#automatic-releases) opens a PR using the published checksums
+and runs CI on it. Review that PR using the checklist below; for a manual release, prepare the same
+change yourself. Enable PR creation in [Actions settings](RELEASING.md#repository-settings) first.
 
 For each release:
 
@@ -76,7 +81,7 @@ For each release:
    brew style Casks/adbdock.rb
    ```
 
-4. Before publishing the cask update, test it from a local tap on an Apple silicon Mac:
+4. Before publishing the cask update, test it from a local tap on each supported Mac architecture:
 
    ```sh
    brew tap adbdock/testing "$PWD"
@@ -92,8 +97,9 @@ For each release:
    The local tap clones committed files: commit the candidate change before this check. The `trust`
    command is for current Homebrew versions with tap-trust enforcement. Remove the
    test installation and `brew untap adbdock/testing` when finished.
-5. Commit and push the verified cask to `main`. Users receive it through `brew update` and
-   `brew upgrade`. Record checks that were not run as well as results that passed.
+5. Merge the verified cask PR after CI passes. Users receive it through `brew update` and
+   `brew upgrade`. Record checks that were not run as well as results that passed. A cask-only merge
+   does not trigger another release.
 
 The initial cask passed `brew style`, a strict audit targeting macOS/ARM, and `brew fetch` with
 SHA-256 verification on Linux. Native install, launch, upgrade, and removal through Homebrew still

@@ -33,7 +33,7 @@ device details (“Android Phone” and `192.0.2.10:5555`).
 
 | Requirement | Details |
 |---|---|
-| Mac | macOS 13+. Source builds target the current Mac's architecture; the first published DMG is Apple silicon (`arm64`) only. Intel release validation is still outstanding. |
+| Mac | macOS 13+. Source builds target the current Mac's architecture. Check the release assets or cask for supported architectures; the original v1.0 image is Apple silicon only. |
 | adb | Android SDK Platform-Tools, installed separately. Originally developed against 35.x. |
 | Phone | Android 11+ with **Developer options → Wireless debugging** enabled. |
 | Network | Mac and phone on the same local network, allowing mDNS discovery and device connections. |
@@ -46,7 +46,7 @@ The full app, including its command-line modes, requires macOS. Linux supports o
 
 ### Install with Homebrew
 
-On an Apple silicon Mac with [Homebrew](https://brew.sh/), add this project's tap and install:
+With [Homebrew](https://brew.sh/) on a Mac supported by the [current cask](Casks/adbdock.rb), add this project's tap and install:
 
 ```sh
 brew tap tripathiamritansh/adbdock https://github.com/tripathiamritansh/adbdock
@@ -154,7 +154,7 @@ and `dns-sd` processes for device communication and discovery. Device settings, 
 live in `~/Library/Application Support/AdbDock/`; adb keeps its own pairing credentials in `~/.android/`.
 Logs and snapshots can contain device identifiers and LAN addresses—redact them before sharing.
 See [local files and permissions](docs/USAGE.md#local-files-and-privacy).
-See [security notes](SECURITY.md) for the review scope and fixes awaiting a new binary release.
+See the [security policy](SECURITY.md) for private reporting and release guidance.
 
 ## Contributing
 
@@ -165,7 +165,7 @@ requires a Mac.
 
 - [Development](docs/DEVELOPMENT.md): build commands, source map, and validation checklist.
 - [Architecture](docs/ARCHITECTURE.md): refresh, reconnection, recovery, and persistence.
-- [Releasing](docs/RELEASING.md): unsigned DMG packaging and recorded validation.
+- [Releasing](docs/RELEASING.md): PR checks, automatic releases, and unsigned DMG packaging.
 - [Homebrew](docs/HOMEBREW.md): tap maintenance and the path to an official catalog submission.
 
 ## License

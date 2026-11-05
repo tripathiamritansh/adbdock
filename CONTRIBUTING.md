@@ -48,7 +48,12 @@ one. For UI changes, include a screenshot with fictional or redacted device deta
 | Pairing or reconnection | Test with an Android phone on the same network; check pause/disconnect behavior and avoid disrupting other adb work. |
 | Packaging | Follow the [release guide](docs/RELEASING.md); report the architecture and checks actually run. |
 
-The portable security tests require Swift and Python 3; there is no automated GUI/device suite.
+Every PR runs native builds, regression tests, CLI smoke tests, and DMG verification on Apple silicon
+and Intel. The **CI** check must pass before merging when the main ruleset is enabled. App/build
+changes merged to `main` trigger a new release; docs and cask-only changes do not. See the
+[release guide](docs/RELEASING.md).
+
+The portable tests require Swift and Python 3; there is no automated GUI/device suite.
 Record relevant tool/platform versions, which checks passed, and anything that failed or was not run.
 Linux contributors can also use the
 [portable core typecheck](docs/DEVELOPMENT.md#portable-core-inspection-on-linux), but it does not

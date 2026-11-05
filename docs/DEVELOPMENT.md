@@ -26,8 +26,9 @@ check signing separately when validating an app artifact.
 
 For an unsigned DMG, use [`scripts/package-dmg.sh`](../scripts/package-dmg.sh) after following the
 [packaging guide](RELEASING.md). That script requires a valid ad-hoc signature on its staged copy and
-verifies the image before saving release outputs. The first published image is arm64 only; no Intel image has been validated.
+verifies the image before saving release outputs. CI packages both architectures; the original v1.0 image was arm64 only. See each release's assets and notes.
 
+`VERSION` supplies the local app version; `APP_VERSION=1.2.0 ./build.sh` overrides it.
 The script recreates the output bundle. Do not keep hand-edited files there. Per-machine `BUNDLE_ID`
 belongs in the gitignored `local.env`; see [bundle configuration](USAGE.md#start-at-login-and-bundle-identifier).
 The script sources that file as shell code. It is not read by the running app. There is no package
@@ -53,11 +54,12 @@ Run the portable security regressions with Swift and Python 3 installed:
 
 ```sh
 ./scripts/test-security.sh
+python3 -B -m unittest discover -s Tests -p 'test_release.py' -v
 ```
 
-These exercise pairing-code handling, device selection, real subprocess pipes/timeouts, and the
-commit guard using temporary fixtures. They need no phone or installed adb. There is no automated
-GUI/device suite. Run the following checks on a Mac and record macOS, architecture, Swift,
+These exercise pairing-code handling, device selection, real subprocess pipes/timeouts, the
+commit guard, and release/cask failure handling using temporary fixtures. They need no phone or installed adb. Every PR also runs native builds, CLI smoke tests, signature and DMG checks on Apple silicon and Intel
+in [GitHub Actions](../.github/workflows/ci.yml). There is no automated GUI/device suite. Run the following checks on a Mac and record macOS, architecture, Swift,
 Platform-Tools, and Android versions. Portable checks do not replace app and physical-device checks.
 
 ### Build and command-line modes
@@ -81,6 +83,9 @@ approved devices' last-seen metadata; run them in a macOS user session. They do 
 automatic connection loop. The app bundle's `--dump` and `--menu` modes are not usable Linux
 substitutes for the GUI.
 
+For deterministic CLI validation on a fresh test account, `python3 scripts/smoke-test.py` uses an
+empty-device adb fixture. It expects an empty approved-device list; it never starts a real adb daemon.
+
 ### App and device behavior
 
 - Verify an initial empty approved list, menu opening, the global shortcut, and clean quit. Check
@@ -100,7 +105,7 @@ substitutes for the GUI.
 
 Use a test device and finish other adb jobs before testing a server restart: the daemon is shared.
 Intel and Apple silicon builds must be validated on the corresponding hardware before claiming both
-were tested. The build targets the host architecture; there is no cross-architecture test matrix here.
+were tested. CI uses one native runner per architecture; physical-device tests still need a person.
 
 ### Exercise the discovery-recovery condition
 

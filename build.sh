@@ -11,6 +11,11 @@ cd "$(dirname "$0")"
 
 [ -f local.env ] && . ./local.env
 BUNDLE_ID="${BUNDLE_ID:-com.example.adbdock}"
+APP_VERSION="${APP_VERSION:-$(cat VERSION)}"
+if [[ ! "$APP_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo 'APP_VERSION must be a numeric major.minor.patch version.' >&2
+  exit 1
+fi
 
 APP_NAME="AdbDock"
 OUT="build/${APP_NAME}.app"
@@ -34,8 +39,8 @@ cat > "$OUT/Contents/Info.plist" <<PLIST
     <key>CFBundleName</key><string>${APP_NAME}</string>
     <key>CFBundleDisplayName</key><string>ADB Dock</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>1.0</string>
-    <key>CFBundleVersion</key><string>1</string>
+    <key>CFBundleShortVersionString</key><string>${APP_VERSION}</string>
+    <key>CFBundleVersion</key><string>${APP_VERSION}</string>
     <key>LSMinimumSystemVersion</key><string>13.0</string>
     <key>LSUIElement</key><true/>
     <key>LSMultipleInstancesProhibited</key><true/>

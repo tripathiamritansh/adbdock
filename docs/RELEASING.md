@@ -1,97 +1,130 @@
-# Packaging an unsigned DMG
+# Releases and CI
 
-ADB Dock 1.0's first downloadable image is for **Apple silicon (`arm64`) only**.
-The DMG is unsigned and not notarized. Its app is ad-hoc signed for executable
-integrity, without a verified Developer ID. adb is not bundled. See the
-[installation notes](INSTALL.txt) for prerequisites and app-specific Gatekeeper guidance.
+[CI and release](../.github/workflows/ci.yml) runs on every pull request and every push to `main`.
+It builds natively on Apple silicon (`macos-15`) and Intel (`macos-15-intel`), runs the security
+regressions and empty-device CLI smoke tests, verifies signing, and creates and mounts both DMGs.
+Release-tooling tests run on Linux. The stable **CI** check passes only when all these checks pass.
 
-The repository also distributes this image through a [Homebrew tap](HOMEBREW.md).
-After publishing a new DMG, follow the [cask update checklist](HOMEBREW.md#maintain-the-cask).
+## Automatic releases
 
-## Build on a Mac
+After a merge, the `main` run publishes a release only when the push changes `Sources/`, `Tests/`,
+`scripts/`, `.github/workflows/`, `build.sh`, `VERSION`, `docs/INSTALL.txt`, or `LICENSE`.
+Documentation and Homebrew-only merges still run CI but do not release. The install notes and license
+are included because they are bundled in the DMG.
+
+```mermaid
+flowchart LR
+    PR[Pull request] --> Checks[Native build and tests on both Macs]
+    Checks --> Merge[Merge to main]
+    Merge --> MainCI[Repeat CI on merged commit]
+    MainCI --> Scope{App or build changed?}
+    Scope -->|Yes| Release[Verify assets and publish release]
+    Scope -->|No| Done[Done]
+    Release --> Cask[Open Homebrew update PR]
+    Cask --> PR
+```
+
+`VERSION` sets the local source-build version, currently `1.1.0`. CI uses its major and minor
+components plus GitHub's workflow run number: run 42 produces `1.1.42` and tag `v1.1.42`.
+Run numbers include PRs, so gaps are expected. A retry keeps the same version. Change the major/minor
+in `VERSION` when starting a new release series; keep the workflow file identity to preserve numbering.
+
+Each release contains a DMG, SHA-256 sidecar, and original build-info file for **each** architecture.
+Publishing requires all six files, correct checksums, and clean-source provenance matching the tested
+commit. It first uploads to a draft, verifies GitHub's asset sizes and digests, then publishes. Existing
+public assets and tags are never replaced. An older run does not force itself to become the latest release.
+
+The next job downloads the public checksum sidecars and opens a cask update PR. It explicitly starts
+CI on that branch because PRs opened with `GITHUB_TOKEN` do not trigger another workflow automatically.
+Review and merge the cask separately after the [Homebrew checks](HOMEBREW.md#maintain-the-cask).
+That metadata-only merge does not release again. No personal access token is needed.
+
+### Repository settings
+
+In [Actions settings](https://github.com/tripathiamritansh/adbdock/settings/actions):
+
+- Allow GitHub Actions and the pinned official `actions/*` actions used by the workflow.
+- Enable **Allow GitHub Actions to create and approve pull requests** for the cask-update job.
+  The workflow only creates PRs; it does not approve or merge them. Job-specific write permissions
+  are declared in YAML; PR build jobs use read-only repository permissions.
+
+After the first successful run, import [main-ruleset.json](../.github/main-ruleset.json) in
+[Repository rules](https://github.com/tripathiamritansh/adbdock/settings/rules) and confirm it is **Active**.
+It requires a PR, resolved review threads, an up-to-date branch and the GitHub Actions **CI** check,
+and blocks branch deletion and force pushes without bypass actors. It permits zero approving reviews
+so a sole maintainer can merge their own PR after CI. Increase that count when another reviewer is available.
+Committing this JSON alone does not activate protection.
+
+### Retry or release manually
+
+Re-run failed jobs from the original Actions run. A same-commit draft can resume uploading; a published
+release is left untouched. If Homebrew PR creation fails, enable the setting above and retry that job.
+A release can succeed even if its subsequent cask PR fails; the cask remains at its previous version.
+
+For an intentional new release without a source change, choose **Run workflow** on `main` in Actions.
+It runs all checks and uses a new run number. Manual runs on other branches run CI without publishing.
+Never move an existing release tag or upload replacement bytes to a public version; fix and release a new version.
+
+## Build locally on a Mac
 
 With macOS 13+ and Apple's Command Line Tools, run from the repository root:
 
 ```sh
 ./scripts/package-dmg.sh
+# Optional explicit version:
+APP_VERSION=1.2.0 ./scripts/package-dmg.sh
 ```
 
-The script builds the current Mac's architecture through `build.sh`, stages a copy,
-ad-hoc signs it, creates an image, verifies its integrity and read-only mount, checks
-the copied binary/plist/install notes/license and Applications shortcut, then ejects
-the image. Verified outputs go to ignored `build/release/`:
+The script builds the host architecture, stages and ad-hoc signs the app, creates an unsigned image,
+verifies its integrity and read-only mount, compares files, checks the Applications shortcut, then ejects.
+Outputs go to ignored `build/release/`, for example:
 
 ```text
-AdbDock-1.0-arm64-unsigned.dmg
-AdbDock-1.0-arm64-unsigned.dmg.sha256
-AdbDock-1.0-arm64-unsigned.build-info.txt
+AdbDock-1.1.0-arm64-unsigned.dmg
+AdbDock-1.1.0-arm64-unsigned.dmg.sha256
+AdbDock-1.1.0-arm64-unsigned.build-info.txt
 ```
 
-`./scripts/package-dmg.sh --skip-build` packages an existing `build/AdbDock.app`.
-It does not establish that an existing binary matches the current source. Both modes
-sign the staged copy; the packaging step leaves the supplied bundle untouched.
-An Intel source build is possible on matching hardware, but no Intel release image
-has been built or validated for this release. No universal binary is provided.
+`--skip-build` packages an existing bundle without proving it matches the source. CI uses it immediately
+after building and testing in the same clean checkout. The staged copy is signed; the input bundle is
+unchanged. Timestamps can differ between builds, so byte-for-byte reproducibility is not claimed.
+If detachment fails, follow the printed detach command before deleting retained temporary files.
 
-The image contains only `AdbDock.app`, an `/Applications` shortcut, `INSTALL.txt`,
-and `LICENSE`. It contains no adb binary, device data, pairing credentials, or local
-configuration. Timestamps can change between builds; byte-for-byte reproducibility
-is not claimed. Outputs are replaced only after validation and detachment succeed.
-If detachment fails, inspect `hdiutil info` and follow the script's printed detach
-command before removing retained temporary files.
+The image contains only `AdbDock.app`, an `/Applications` shortcut, `INSTALL.txt`, and `LICENSE`.
+adb is installed separately. Verify a downloaded image using its matching sidecar:
 
-## Recorded arm64 validation
+```sh
+shasum -a 256 -c AdbDock-1.1.0-arm64-unsigned.dmg.sha256
+hdiutil verify AdbDock-1.1.0-arm64-unsigned.dmg
+```
 
-The published image has SHA-256:
+Use the filenames of the version and architecture you downloaded. Then follow [INSTALL.txt](INSTALL.txt).
+The DMG is unsigned and not notarized; the app is ad-hoc signed without a verified Developer ID.
+A checksum detects changes but does not authenticate the developer.
+
+## Checks that still need a person
+
+CI does not validate real-phone pairing/reconnection, GUI interaction, the global shortcut, login startup,
+Homebrew install/upgrade/removal, or downloaded-app Gatekeeper approval. Use the
+[development checklist](DEVELOPMENT.md#app-and-device-behavior) on the supported Mac architectures and
+record which checks were actually run. Do not disable Gatekeeper globally or recursively remove quarantine.
+
+## Historical v1.0 validation
+
+The original image is **arm64 only**, built on macOS 15.6.1 (24G90), Apple Swift 6.1 in Swift 5 mode,
+targeting macOS 13. Its SHA-256 is:
 
 ```text
 903ff2389ce7b7a8ac907986325e8365dd3256e676ce4fe3805744533815e877
 ```
 
-It was built on macOS 15.6.1 (24G90), arm64, with Apple Swift 6.1 in Swift 5
-language mode, targeting macOS 13. The local adb installation was Platform-Tools
-35.0.2 (protocol 1.0.41). Android 11+ wireless debugging and a shared local network
-are required; no new Android hardware-version test was recorded during packaging.
+Native build, signature, DMG integrity/mount, file comparison, isolated installation/launch, and the
+installed empty-device `--dump`/`--menu` checks passed. Menu visibility was confirmed; the antenna
+returned after reducing menu-bar crowding. Real-device and login behavior were previously reported
+by the maintainer, not repeated for packaging. Downloaded-app Gatekeeper and Intel were not tested.
+The local adb version was 35.0.2. The README screenshots are edited examples, not hardware test evidence.
 
-| Check | Result |
-|---|---|
-| Native build, DMG integrity and read-only mount | Passed |
-| Staged/mounted file comparison and Applications shortcut | Passed |
-| Strict ad-hoc app signature | Passed; no Developer ID or notarization |
-| Install from image, eject, launch installed copy | Passed in an isolated installation |
-| Installed `--dump` and `--menu` | Passed with zero approved/discovered devices |
-| Menu and antenna visibility | User confirmed shortcut/menu; original screenshot visually inspected. Antenna returned after the user reduced menu-bar crowding. No source fix was made. |
-| Real-device pairing/reconnection and login startup | Previously reported as verified by the maintainer; not independently repeated for this packaging run |
-| Downloaded/quarantined Gatekeeper flow | Not tested; local launch does not establish download behavior |
-| Intel image | Not built or validated |
-
-The README's two approved images are edited and upscaled screenshots. Other
-menu-bar icons were removed. The connected view uses fictional device details,
-as its caption discloses; a still image is not an end-to-end hardware test.
-
-## Source correspondence
-
-The app's `Sources/`, `build.sh`, and `LICENSE` are unchanged from commit
-`bd30de7cb2393322b9e94502ba726ad560c2d9af`. The packaging script and bundled
-`INSTALL.txt` match the exact inputs used to generate the tested image. The
-release tag includes those inputs plus documentation and approved screenshots;
-documentation changes did not rebuild or alter the DMG.
-
-The original build-info sidecar records the base commit, dirty checkout and
-`skip-build=true`: the app had just been built, then packaging was retried with
-host access after a sandbox mount-tool limitation. Preserve that original record
-alongside the checksum rather than rewriting its provenance to the newer docs commit.
-
-## Verify an image
-
-From its download directory:
-
-```sh
-shasum -a 256 -c AdbDock-1.0-arm64-unsigned.dmg.sha256
-hdiutil verify AdbDock-1.0-arm64-unsigned.dmg
-```
-
-Follow [INSTALL.txt](INSTALL.txt), install in a stable location, eject the image,
-then open the installed app. A checksum detects changes but does not authenticate
-the developer. Do not disable Gatekeeper globally or recursively remove quarantine.
-Managed Macs may disallow an override. Keep unrun checks separate from passed checks.
+For that v1.0 image, `Sources/`, `build.sh`, and `LICENSE` matched commit
+`bd30de7cb2393322b9e94502ba726ad560c2d9af`. The release tag includes the packaging inputs and docs.
+Its original build-info records a dirty checkout and `skip-build=true`: packaging was retried after a
+sandbox mount limitation. Preserve that original record; it describes v1.0, not the current source.
