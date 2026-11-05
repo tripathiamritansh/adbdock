@@ -71,10 +71,13 @@ Platform-Tools version.
 ## Pairing and menu actions
 
 The app delegate handles user actions through `Adb`. Pairing reads a `_adb-tls-pairing._tcp`
-advertisement and calls `adb pair` with the address and user-entered code. Because mDNS is
+advertisement and calls `adb pair` with the address, supplying the six-digit code through stdin
+instead of command-line arguments. Codes echoed in command output are redacted before logging. Because mDNS is
 unauthenticated, the user must compare the address and port with the phone. After success, the app
-looks for a connection advertisement, attempts to attach, and saves the device to the approved list.
+looks for a connection advertisement on the confirmed host, attempts to attach, and saves the device to the approved list.
 Pairing establishes trust; attaching establishes a usable transport.
+
+These protections are in current source; [v1.0 release limitations](../SECURITY.md#release-status) still apply.
 
 **Pause** changes management only. **Disconnect** also requests `adb disconnect`. **Remove from list**
 removes the local entry and leaves adb's pairing credentials intact. See the

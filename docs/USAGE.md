@@ -54,10 +54,11 @@ install adb in one of the supported locations or make it discoverable by the log
    If the connection service is not available yet, it will retry when the device advertises.
 
 The dialog offers up to three pairing attempts. Reopening the phone's pairing screen changes the code
-and may change the port. Pair one phone at a time when possible: **Pair new device…** initially uses
-the first pairing advertisement it finds. A device row's **Pair this device…** tries to match that
-device; if it cannot and several candidates remain, it offers an address chooser. Always check the
-address, including after a retry, because mDNS advertisements are unauthenticated.
+and may change the port. Pair one phone at a time when possible. In current source builds, **Pair new
+device…** offers an address chooser when several phones advertise; a row's **Pair this device…** first
+tries to match that device. Retries stay with the selected host and device identity. If either changes,
+cancel and start pairing again. Always check the address because mDNS advertisements are unauthenticated.
+The published v1.0 app uses the earlier selection behavior; see [release security status](../SECURITY.md#release-status).
 
 Pairing and connecting are separate operations. A **Paired** message does not guarantee an immediately
 usable transport; check the device's row or `adb devices -l` afterward.

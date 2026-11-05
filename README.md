@@ -154,6 +154,7 @@ and `dns-sd` processes for device communication and discovery. Device settings, 
 live in `~/Library/Application Support/AdbDock/`; adb keeps its own pairing credentials in `~/.android/`.
 Logs and snapshots can contain device identifiers and LAN addresses—redact them before sharing.
 See [local files and permissions](docs/USAGE.md#local-files-and-privacy).
+See [security notes](SECURITY.md) for the review scope and fixes awaiting a new binary release.
 
 ## Contributing
 

@@ -49,9 +49,16 @@ manifest, dependency lockfile, or package-install step.
 
 ## Validation
 
-There is no automated app test suite in this checkout. Run the following on a Mac and record the macOS,
-architecture, Swift, platform-tools, and Android versions used. A successful portable typecheck does
-not replace app and physical-device checks.
+Run the portable security regressions with Swift and Python 3 installed:
+
+```sh
+./scripts/test-security.sh
+```
+
+These exercise pairing-code handling, device selection, real subprocess pipes/timeouts, and the
+commit guard using temporary fixtures. They need no phone or installed adb. There is no automated
+GUI/device suite. Run the following checks on a Mac and record macOS, architecture, Swift,
+Platform-Tools, and Android versions. Portable checks do not replace app and physical-device checks.
 
 ### Build and command-line modes
 

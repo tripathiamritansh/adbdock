@@ -25,18 +25,6 @@ enum Bonjour {
     }
 
     private static func run(_ args: [String], timeout: TimeInterval) -> String {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/dns-sd")
-        p.arguments = args
-        let pipe = Pipe()
-        p.standardOutput = pipe
-        p.standardError = Pipe()
-        guard (try? p.run()) != nil else { return "" }
-        let killer = DispatchWorkItem { if p.isRunning { p.terminate() } }
-        DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: killer)
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
-        killer.cancel()
-        return String(decoding: data, as: UTF8.self)
+        Adb.exec("/usr/bin/dns-sd", args, timeout: timeout).out
     }
 }

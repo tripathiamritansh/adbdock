@@ -347,7 +347,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let knownIP: String? = {
             guard let serial = preferredSerial,
                   let address = store.devices.first(where: { $0.serial == serial })?.lastAddress else { return nil }
-            return address.split(separator: ":").first.map(String.init)
+            return MdnsService.host(in: address)
         }()
 
         // The phone takes a moment to advertise once its pairing screen opens.
@@ -357,10 +357,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             candidates = Adb.shared.mdnsServices().filter { $0.isPairing }
             if let preferredSerial = preferredSerial {
                 service = candidates.first { $0.serial == preferredSerial || (knownIP != nil && $0.ip == knownIP) }
-            } else {
+            } else if candidates.count == 1 {
                 service = candidates.first
             }
-            if service != nil { break }
+            if service != nil || candidates.count > 1 { break }
             if attempt < 9 { Thread.sleep(forTimeInterval: 0.7) }
         }
 
@@ -392,7 +392,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 + "\n\nCheck that \(current.address) matches the IP address and port on the phone’s pairing screen. If it does not, cancel: something on this network is advertising itself as a device in pairing mode."
             a.addButton(withTitle: "Pair")
             a.addButton(withTitle: "Cancel")
-            let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
+            let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
             field.placeholderString = "6-digit code"
             a.accessoryView = field
             a.window.initialFirstResponder = field
@@ -404,12 +404,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let r = Adb.shared.pair(address: current.address, code: code)
             AppLog.write("pair \(current.address): \(r.message)")
             if r.ok {
-                finishPairing(pairing: current, knownIP: knownIP)
+                finishPairing(pairing: current)
                 return
             }
             lastFailure = r.message
             // Reopening the phone's screen changes the advertised port.
-            if let refreshed = Adb.shared.mdnsServices().first(where: { $0.isPairing }) { current = refreshed }
+            if let refreshed = Adb.shared.mdnsServices().first(where: {
+                $0.isPairing && $0.ip == current.ip && $0.serial == current.serial
+            }) { current = refreshed }
         }
         alert("Pairing failed", lastFailure ?? "adb pair did not report success.")
     }
@@ -434,12 +436,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// After a successful `adb pair`: wait for the device's *connect*
     /// advertisement, attach it, and record it.
-    private func finishPairing(pairing: MdnsService, knownIP: String?) {
+    private func finishPairing(pairing: MdnsService) {
         var connectService: MdnsService?
         for _ in 0..<24 {
             let services = Adb.shared.mdnsServices().filter { !$0.isPairing }
-            connectService = services.first { $0.serial == pairing.serial }
-                ?? services.first { knownIP != nil && $0.ip == knownIP }
+            connectService = MdnsService.connection(afterPairing: pairing, among: services)
             if connectService != nil { break }
             Thread.sleep(forTimeInterval: 0.5)
         }
@@ -452,9 +453,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             var attempt = 1
             while !c.ok && attempt <= 3 {
                 Thread.sleep(forTimeInterval: 2)
-                let fresh = Adb.shared.mdnsServices().first {
-                    !$0.isPairing && ($0.serial == pairing.serial || (knownIP != nil && $0.ip == knownIP))
-                }
+                let fresh = MdnsService.connection(afterPairing: pairing, among: Adb.shared.mdnsServices())
                 c = Adb.shared.connect(fresh?.transportName ?? transport)
                 attempt += 1
             }
@@ -527,16 +526,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func runLaunchctl(_ args: [String]) -> (code: Int32, out: String) {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        p.arguments = args
-        let pipe = Pipe()
-        p.standardOutput = pipe
-        p.standardError = pipe
-        guard (try? p.run()) != nil else { return (-1, "launchctl failed to run") }
-        p.waitUntilExit()
-        return (p.terminationStatus, String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-            .trimmingCharacters(in: .whitespacesAndNewlines))
+        let result = Adb.exec("/bin/launchctl", args, timeout: 15)
+        return (result.code, (result.out + result.err).trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
     private func xmlEscape(_ s: String) -> String {

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Commit guard for this repo. Enabled by `core.hooksPath` pointing here, because
-# git only reads ONE hooks directory (see README → "Commit guard").
+# git only reads ONE hooks directory (see docs/DEVELOPMENT.md → "Commit guard").
 #
 # Two jobs:
 #   1. refuse a commit whose identity is not the repository's published identity
@@ -19,7 +19,7 @@ want="17977913+tripathiamritansh@users.noreply.github.com"
 
 have=$(git config user.email || true)
 if [ "$have" != "$want" ]; then
-    echo "pre-commit: refusing to commit — user.email is '${have:-<unset>}', expected '$want'" >&2
+    echo "pre-commit: refusing to commit — user.email does not match the published identity" >&2
     echo "            fix: git config user.email '$want'" >&2
     exit 1
 fi
@@ -27,7 +27,7 @@ fi
 for var in GIT_AUTHOR_EMAIL GIT_COMMITTER_EMAIL; do
     val="${!var:-}"
     if [ -n "$val" ] && [ "$val" != "$want" ]; then
-        echo "pre-commit: refusing to commit — $var='$val'" >&2
+        echo "pre-commit: refusing to commit — $var does not match the published identity" >&2
         exit 1
     fi
 done
@@ -46,10 +46,9 @@ fi
 # before matching so broad patterns like a surname do not false-positive on it.
 # This file is excluded from the scan: it necessarily contains the credential
 # patterns themselves, which would otherwise make it refuse its own commit.
-added=$(git diff --cached --diff-filter=ACM -U0 -- . ':(exclude)hooks/pre-commit' \
-    | grep -E '^\+' | sed "s|$want||g" || true)
+staged_diff=$(git diff --cached --diff-filter=ACM -U0 -- . ':(exclude)hooks/pre-commit')
+added=$(printf '%s\n' "$staged_diff" | grep -E '^\+' | sed "s|$want||g" || true)
 if printf '%s' "$added" | grep -E -i -q "$patterns"; then
-    echo "pre-commit: staged content matches a secret or machine-specific pattern:" >&2
-    printf '%s\n' "$added" | grep -E -i -n "$patterns" >&2
+    echo "pre-commit: staged content matches a secret or machine-specific pattern (value redacted)" >&2
     exit 1
 fi

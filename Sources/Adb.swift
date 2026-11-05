@@ -9,7 +9,21 @@ struct MdnsService {
     var isPairing: Bool { type.contains("pairing") }
     /// Just the address part, for matching a pairing advertisement to a device's
     /// last known address (the pairing instance name does not always carry the serial).
-    var ip: String { address.split(separator: ":").first.map(String.init) ?? address }
+    var ip: String { Self.host(in: address) }
+
+    static func host(in address: String) -> String {
+        guard let portSeparator = address.lastIndex(of: ":") else { return address }
+        let host = String(address[..<portSeparator])
+        if host.hasPrefix("["), host.hasSuffix("]") { return String(host.dropFirst().dropLast()) }
+        return host
+    }
+
+    static func connection(afterPairing pairing: MdnsService, among services: [MdnsService]) -> MdnsService? {
+        // The user confirmed this host in the pairing dialog. An unauthenticated
+        // advertiser on another host must not win by copying its serial string.
+        let sameHost = services.filter { !$0.isPairing && $0.ip == pairing.ip }
+        return sameHost.first { $0.serial == pairing.serial } ?? sameHost.first
+    }
     /// Device serial recovered from the mdns instance name.
     var serial: String { SerialId.fromMdns(instance) }
     /// Transport name exactly as `adb devices` reports it.
@@ -76,26 +90,15 @@ final class Adb {
 
         // Last resort: ask a login shell — bounded, stderr drained, and the answer
         // is validated as an absolute executable path before it is ever used.
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        p.arguments = ["-lc", "command -v adb"]
-        let pipe = Pipe()
-        let errPipe = Pipe()
-        p.standardOutput = pipe
-        p.standardError = errPipe
-        guard (try? p.run()) != nil else { return nil }
-        let killer = DispatchWorkItem { if p.isRunning { p.terminate() } }
-        DispatchQueue.global().asyncAfter(deadline: .now() + 5, execute: killer)
-        let out = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-        _ = errPipe.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
-        killer.cancel()
-        let path = out.trimmingCharacters(in: .whitespacesAndNewlines)
+        let result = exec("/bin/zsh", ["-lc", "command -v adb"], timeout: 5)
+        guard result.code == 0 else { return nil }
+        let path = result.out.trimmingCharacters(in: .whitespacesAndNewlines)
         guard path.hasPrefix("/"), FileManager.default.isExecutableFile(atPath: path) else { return nil }
         return path
     }
 
-    static func exec(_ path: String, _ args: [String], timeout: TimeInterval) -> (code: Int32, out: String, err: String) {
+    static func exec(_ path: String, _ args: [String], timeout: TimeInterval,
+                     input: String? = nil) -> (code: Int32, out: String, err: String) {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: path)
         p.arguments = args
@@ -109,6 +112,18 @@ final class Adb {
         let errPipe = Pipe()
         p.standardOutput = outPipe
         p.standardError = errPipe
+        if let input = input {
+            // Fill a small pipe before launching: its reader is still open, so an
+            // early child exit cannot cause SIGPIPE while we write a pairing code.
+            let data = Data(input.utf8)
+            guard data.count <= 512 else { return (-1, "", "subprocess input too large") }
+            let inputPipe = Pipe()
+            inputPipe.fileHandleForWriting.write(data)
+            inputPipe.fileHandleForWriting.closeFile()
+            p.standardInput = inputPipe
+        } else {
+            p.standardInput = FileHandle.nullDevice
+        }
         do { try p.run() } catch { return (-1, "", "\(error)") }
 
         // Drain both streams concurrently and cap what is kept: a device (or a
@@ -143,9 +158,10 @@ final class Adb {
     }
 
     @discardableResult
-    func run(_ args: [String], timeout: TimeInterval = 15) -> (code: Int32, out: String, err: String) {
+    func run(_ args: [String], timeout: TimeInterval = 15,
+             input: String? = nil) -> (code: Int32, out: String, err: String) {
         guard let p = path else { return (-1, "", "adb not found") }
-        return Adb.exec(p, args, timeout: timeout)
+        return Adb.exec(p, args, timeout: timeout, input: input)
     }
 
     func mdnsServices() -> [MdnsService] {
@@ -195,7 +211,7 @@ final class Adb {
     func connect(_ transportName: String) -> (ok: Bool, message: String) {
         let r = run(["connect", transportName], timeout: 20)
         let msg = (r.out + r.err).trimmingCharacters(in: .whitespacesAndNewlines)
-        return (r.out.contains("connected to"), msg)
+        return (r.code == 0 && r.out.contains("connected to"), msg)
     }
 
     /// The recovery lever: a wedged mDNS client is fixed by a fresh server.
@@ -213,9 +229,15 @@ final class Adb {
     }
 
     func pair(address: String, code: String) -> (ok: Bool, message: String) {
-        let r = run(["pair", address, code], timeout: 45)
+        guard code.utf8.count == 6, code.utf8.allSatisfy({ (48...57).contains($0) }) else {
+            return (false, "Enter exactly six digits from the phone's pairing screen.")
+        }
+        // adb prompts on stdin when the code argument is omitted. Keep the secret
+        // out of the process list, and redact it if a tool ever echoes it back.
+        let r = run(["pair", address], timeout: 45, input: code + "\n")
         let msg = (r.out + r.err).trimmingCharacters(in: .whitespacesAndNewlines)
-        return (r.out.contains("Successfully paired"), msg)
+            .replacingOccurrences(of: code, with: "[redacted]")
+        return (r.code == 0 && r.out.contains("Successfully paired"), msg)
     }
 
     func prop(_ transport: String, _ name: String) -> String? {

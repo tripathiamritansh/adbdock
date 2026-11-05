@@ -28,6 +28,9 @@ signing status or guarantee Gatekeeper approval. Follow the [installation notes]
 the app-specific macOS approval flow; no quarantine removal or global security changes are needed
 in the cask.
 
+The cask still installs v1.0. Security fixes on `main` need a new Mac build and release before they
+reach Brew installations; see [release security status](../SECURITY.md#release-status).
+
 ## Update or remove
 
 ```sh

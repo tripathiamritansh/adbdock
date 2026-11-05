@@ -44,11 +44,14 @@ one. For UI changes, include a screenshot with fictional or redacted device deta
 |---|---|
 | Documentation | Check commands against the code, relative links and heading anchors, and diagram labels. |
 | Shell scripts | Run `bash -n build.sh scripts/package-dmg.sh hooks/pre-commit`, then exercise the affected workflow on macOS. |
-| Swift or UI behavior | Build on macOS, verify the signature, run `--dump` and `--menu`, and exercise the changed behavior using the development checklist. |
+| Swift or UI behavior | Run `./scripts/test-security.sh`, build on macOS, verify the signature, run `--dump` and `--menu`, and exercise the changed behavior using the development checklist. |
 | Pairing or reconnection | Test with an Android phone on the same network; check pause/disconnect behavior and avoid disrupting other adb work. |
 | Packaging | Follow the [release guide](docs/RELEASING.md); report the architecture and checks actually run. |
 
-There is no automated app test suite in this checkout. Record the relevant tool/platform versions,
-which checks passed, and anything that failed or was not run. Linux contributors can use the
+The portable security tests require Swift and Python 3; there is no automated GUI/device suite.
+Record relevant tool/platform versions, which checks passed, and anything that failed or was not run.
+Linux contributors can also use the
 [portable core typecheck](docs/DEVELOPMENT.md#portable-core-inspection-on-linux), but it does not
 validate the macOS app or phone behavior. State that limitation in the pull request when applicable.
+
+See [security notes](SECURITY.md) before sharing diagnostics or reporting sensitive findings.
