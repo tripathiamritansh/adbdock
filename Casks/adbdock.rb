@@ -1,9 +1,9 @@
 cask "adbdock" do
   arch arm: "arm64", intel: "x86_64"
 
-  version "1.1.1"
-  sha256 arm:   "c536a7952f8376594d969e8dfacfa2743ae016e5dac75186f7ec3d28d185f31c",
-         intel: "be5c0d1e931dbfda82c79fee7dae613016ee4ad75b6034e02524c9c85583c1a6"
+  version "1.1.2"
+  sha256 arm:   "485cfc5bdb842d95c03680411fe983c38fe497afe7efb3ba9ae2cab334b30e0f",
+         intel: "c6ea7aca3361cdcd732674b17ef70dcbc6d1f250b11cd3ea9c69a034f70beed6"
 
   url "https://github.com/tripathiamritansh/adbdock/releases/download/v#{version}/AdbDock-#{version}-#{arch}-unsigned.dmg"
   name "ADB Dock"
