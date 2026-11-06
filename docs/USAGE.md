@@ -58,7 +58,6 @@ and may change the port. Pair one phone at a time when possible. In current sour
 device…** offers an address chooser when several phones advertise; a row's **Pair this device…** first
 tries to match that device. Retries stay with the selected host and device identity. If either changes,
 cancel and start pairing again. Always check the address because mDNS advertisements are unauthenticated.
-The published v1.0 app uses the earlier selection behavior; see [release security status](../SECURITY.md#release-status).
 
 Pairing and connecting are separate operations. A **Paired** message does not guarantee an immediately
 usable transport; check the device's row or `adb devices -l` afterward.

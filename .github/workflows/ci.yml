@@ -29,7 +29,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - run: python3 -B -m unittest discover -s Tests -p 'test_release.py' -v
+      - run: python3 -B -m unittest discover -s Tests -p 'test_*.py' -v
       - name: Select version and release scope
         id: version
         run: python3 scripts/ci-version.py
@@ -121,23 +121,10 @@ jobs:
   homebrew:
     name: Open Homebrew update PR
     needs: [prepare, publish]
-    runs-on: macos-15
-    timeout-minutes: 15
-    # Serialize cask updates so an older run cannot overwrite a newer branch.
-    concurrency:
-      group: homebrew-update
-      cancel-in-progress: false
+    uses: ./.github/workflows/homebrew.yml
+    with:
+      version: ${{ needs.prepare.outputs.version }}
     permissions:
       contents: write
       pull-requests: write
       actions: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: main
-          persist-credentials: false
-      - name: Propose the cask update and start its CI
-        env:
-          GH_TOKEN: ${{ github.token }}
-          APP_VERSION: ${{ needs.prepare.outputs.version }}
-        run: bash scripts/update-homebrew.sh

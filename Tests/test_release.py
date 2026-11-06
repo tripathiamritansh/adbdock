@@ -31,7 +31,7 @@ class PolicyTests(unittest.TestCase):
                      ".github/workflows/ci.yml", "VERSION", "build.sh", "docs/INSTALL.txt", "LICENSE"):
             with self.subTest(path=path):
                 self.assertTrue(policy.needs_release([path]))
-        self.assertFalse(policy.needs_release(["README.md", "docs/USAGE.md", "SECURITY.md",
+        self.assertFalse(policy.needs_release(["README.md", "docs/USAGE.md",
                                               "Casks/adbdock.rb", ".github/main-ruleset.json"]))
 
     def test_version_is_stable_across_retries(self):
@@ -44,20 +44,23 @@ class PolicyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "outputs"
             event = Path(directory) / "event.json"
-            event.write_text(json.dumps({"before": "a" * 40}))
-            for name, ref, paths, expected in (
-                ("pull_request", "refs/pull/1/merge", "Sources/Adb.swift\0", False),
-                ("workflow_dispatch", "refs/heads/automation/homebrew-v1.1.42", "", False),
-                ("workflow_dispatch", "refs/heads/main", "", True),
-                ("push", "refs/heads/main", "Casks/adbdock.rb\0", False),
-                ("push", "refs/heads/main", "Sources/Adb.swift\0README.md\0", True),
+            for name, ref, paths, forced, expected in (
+                ("pull_request", "refs/pull/1/merge", "Sources/Adb.swift\0", False, False),
+                ("workflow_dispatch", "refs/heads/automation/homebrew-v1.1.42", "", False, False),
+                ("workflow_dispatch", "refs/heads/main", "", False, True),
+                ("push", "refs/heads/main", "Casks/adbdock.rb\0", False, False),
+                ("push", "refs/heads/main", "Sources/Adb.swift\0README.md\0", False, True),
+                ("push", "refs/heads/main", "", True, True),
             ):
-                with self.subTest(event=name, ref=ref, paths=paths), patch.dict(os.environ, {
+                event.write_text(json.dumps({"before": "a" * 40, "forced": forced}))
+                with self.subTest(event=name, ref=ref, paths=paths, forced=forced), patch.dict(os.environ, {
                     "GITHUB_RUN_NUMBER": "42", "GITHUB_EVENT_NAME": name, "GITHUB_REF": ref,
                     "GITHUB_EVENT_PATH": str(event), "GITHUB_SHA": "b" * 40, "GITHUB_OUTPUT": str(output),
-                }), patch.object(policy.subprocess, "check_output", return_value=paths):
+                }), patch.object(policy.subprocess, "check_output", return_value=paths) as diff:
                     output.write_text("")
                     policy.main()
+                    if forced:
+                        diff.assert_not_called()
                     expected_version = policy.ci_version((ROOT / "VERSION").read_text().strip(), "42")
                     self.assertEqual(output.read_text(), f"version={expected_version}\npublish={str(expected).lower()}\n")
 

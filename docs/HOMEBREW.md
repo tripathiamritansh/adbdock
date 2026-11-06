@@ -30,7 +30,6 @@ the app-specific macOS approval flow; no quarantine removal or global security c
 in the cask.
 
 Source fixes reach Brew installations after a release is published and its cask-update PR is merged.
-See the [release policy](../SECURITY.md#release-status).
 
 ## Update or remove
 
@@ -67,6 +66,11 @@ SHA-256. The cask does not build from source or disable macOS security checks.
 The [release workflow](RELEASING.md#automatic-releases) opens a PR using the published checksums
 and runs CI on it. Review that PR using the checklist below; for a manual release, prepare the same
 change yourself. Enable PR creation in [Actions settings](RELEASING.md#repository-settings) first.
+
+If a release succeeds but its Homebrew job fails, the installed cask stays on its previous version.
+Enable **Allow GitHub Actions to create and approve pull requests** in the repository's Actions settings,
+then run **Homebrew** on `main` with the published version. This does not create another app release.
+The job preserves the update branch and reports a direct link for creating the PR manually.
 
 For each release:
 

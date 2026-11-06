@@ -58,5 +58,3 @@ Record relevant tool/platform versions, which checks passed, and anything that f
 Linux contributors can also use the
 [portable core typecheck](docs/DEVELOPMENT.md#portable-core-inspection-on-linux), but it does not
 validate the macOS app or phone behavior. State that limitation in the pull request when applicable.
-
-See [security notes](SECURITY.md) before sharing diagnostics or reporting sensitive findings.

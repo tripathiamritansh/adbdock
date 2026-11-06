@@ -21,11 +21,18 @@ git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 git switch -c "$branch"
 git add Casks/adbdock.rb
 git commit -m "Update Homebrew cask to $APP_VERSION"
-# Do not overwrite an existing branch on retries; dispatch/check the existing PR.
-if ! git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
-  git push origin "HEAD:refs/heads/$branch"
+# A retry incorporates current main and preserves any existing branch edits.
+# Push normally: a concurrent update must fail rather than be overwritten.
+existing="$(git ls-remote --heads origin "$branch")"
+if [ -n "$existing" ]; then
+  git fetch origin "refs/heads/$branch"
+  git merge --no-edit FETCH_HEAD
 fi
-pr="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$branch" --base main --state open --json number --jq '.[0].number // empty')"
+git push origin "HEAD:refs/heads/$branch"
+if ! pr="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$branch" --base main --state open --json number --jq '.[0].number // empty')"; then
+  echo '::error title=Cannot read Homebrew pull requests::Check the workflow pull-requests permission and repository Actions policy.'
+  exit 1
+fi
 if [ -z "$pr" ]; then
   body="$checksums/pr-body.md"
   cat > "$body" <<EOF
@@ -35,8 +42,20 @@ The release passed the native CI build, regression tests, CLI smoke tests and DM
 
 This metadata-only merge does not publish another release.
 EOF
-  gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$branch" \
-    --title "Update Homebrew cask to $APP_VERSION" --body-file "$body"
+  if ! gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$branch" \
+    --title "Update Homebrew cask to $APP_VERSION" --body-file "$body" 2>"$checksums/pr-error.txt"; then
+    # Put the actual failure in a public annotation; full logs require sign-in.
+    python3 - "$checksums/pr-error.txt" <<'PY'
+from pathlib import Path
+import sys
+message = Path(sys.argv[1]).read_text().strip()
+message = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+print(f'::error title=Homebrew PR creation failed::{message}')
+PY
+    echo 'Enable Settings > Actions > General > Allow GitHub Actions to create and approve pull requests, then run the Homebrew workflow for this version.' >&2
+    echo "Manual PR: https://github.com/$GITHUB_REPOSITORY/compare/main...$branch?expand=1" >&2
+    exit 1
+  fi
 fi
 # GITHUB_TOKEN-created PR events do not start another workflow. An explicit
 # workflow_dispatch is allowed and supplies the required CI check on this branch.

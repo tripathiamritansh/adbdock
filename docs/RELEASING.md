@@ -10,7 +10,8 @@ Release-tooling tests run on Linux. The stable **CI** check passes only when all
 After a merge, the `main` run publishes a release only when the push changes `Sources/`, `Tests/`,
 `scripts/`, `.github/workflows/`, `build.sh`, `VERSION`, `docs/INSTALL.txt`, or `LICENSE`.
 Documentation and Homebrew-only merges still run CI but do not release. The install notes and license
-are included because they are bundled in the DMG.
+are included because they are bundled in the DMG. An authorized history rewrite triggers a full
+build and release without requiring the removed commits to be fetched.
 
 ```mermaid
 flowchart LR
@@ -58,7 +59,12 @@ Committing this JSON alone does not activate protection.
 ### Retry or release manually
 
 Re-run failed jobs from the original Actions run. A same-commit draft can resume uploading; a published
-release is left untouched. If Homebrew PR creation fails, enable the setting above and retry that job.
+release is left untouched. If Homebrew PR creation fails, enable the setting above, then open the **Homebrew** workflow, choose
+**Run workflow** on `main`, and enter the already-published version without `v` (for example `1.1.1`).
+This retries the cask update without rebuilding or publishing another app release. Retries merge the
+existing automation branch with current `main`, preserve branch edits, and never force-push. Conflicts
+stop the job for manual resolution. The job annotation includes the GitHub error and the logs link a
+manual PR creation page.
 A release can succeed even if its subsequent cask PR fails; the cask remains at its previous version.
 
 For an intentional new release without a source change, choose **Run workflow** on `main` in Actions.

@@ -31,7 +31,9 @@ def main():
             after = os.environ["GITHUB_SHA"]
             if not all(re.fullmatch(r"[0-9a-f]{40}", value) for value in (before, after)):
                 raise ValueError("Invalid commit SHA")
-            if before == "0" * 40:
+            # A deliberate history rewrite can make the old SHA unreachable.
+            # Rebuild the new main commit without fetching the removed history.
+            if before == "0" * 40 or event.get("forced", False):
                 publish = True
             else:
                 paths = subprocess.check_output(
